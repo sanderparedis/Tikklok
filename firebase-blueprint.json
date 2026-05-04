@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "WorkEntry": {
+      "title": "Work Entry",
+      "description": "A record of hours worked on a specific day",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "breakTime": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "date", "startTime", "endTime", "breakTime", "userId"]
+    },
+    "TravelEntry": {
+      "title": "Travel Entry",
+      "description": "A record of a professional trip",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "description": { "type": "string" },
+        "distance": { "type": "number" },
+        "type": { "type": "string", "enum": ["auto", "fiets"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "date", "description", "distance", "type", "userId"]
+    },
+    "TimerState": {
+      "title": "Timer State",
+      "description": "The current state of the active work timer",
+      "type": "object",
+      "properties": {
+        "isActive": { "type": "boolean" },
+        "startTime": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["isActive"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/workEntries/{entryId}": {
+      "schema": "WorkEntry",
+      "description": "Collection of work entries for a specific user"
+    },
+    "/users/{userId}/travelEntries/{entryId}": {
+      "schema": "TravelEntry",
+      "description": "Collection of travel entries for a specific user"
+    },
+    "/users/{userId}/state/timer": {
+      "schema": "TimerState",
+      "description": "The persistent timer state for a user"
+    }
+  }
+}

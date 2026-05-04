@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User data
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      
+      match /workEntries/{entryId} {
+        function isValidWorkEntry(data) {
+          return data.keys().hasAll(['id', 'date', 'startTime', 'endTime', 'breakTime', 'userId', 'createdAt']) && 
+                 data.keys().size() == 7 &&
+                 data.id is string && data.id.size() <= 64 &&
+                 data.date is string && data.date.size() == 10 &&
+                 data.startTime is string && data.startTime.size() == 5 &&
+                 data.endTime is string && data.endTime.size() == 5 &&
+                 data.breakTime is int &&
+                 data.userId == request.auth.uid &&
+                 data.createdAt == request.time;
+        }
+
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(entryId) && isValidWorkEntry(incoming());
+        allow update: if false; // Entries are immutable in this design for now, or use complex logic
+        allow delete: if isOwner(userId);
+      }
+
+      match /travelEntries/{entryId} {
+        function isValidTravelEntry(data) {
+          return data.keys().hasAll(['id', 'date', 'description', 'distance', 'type', 'userId', 'createdAt']) && 
+                 data.keys().size() == 7 &&
+                 data.id is string && data.id.size() <= 64 &&
+                 data.date is string && data.date.size() == 10 &&
+                 data.description is string && data.description.size() <= 200 &&
+                 (data.distance is number || data.distance is int) &&
+                 data.type in ['auto', 'fiets'] &&
+                 data.userId == request.auth.uid &&
+                 data.createdAt == request.time;
+        }
+
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(entryId) && isValidTravelEntry(incoming());
+        allow update: if false;
+        allow delete: if isOwner(userId);
+      }
+
+      match /state/timer {
+        function isValidTimerState(data) {
+          return data.keys().hasAll(['isActive', 'startTime', 'updatedAt']) &&
+                 data.keys().size() == 3 &&
+                 data.isActive is bool &&
+                 (data.startTime == null || data.startTime is number) &&
+                 data.updatedAt == request.time;
+        }
+
+        allow get: if isOwner(userId);
+        allow write: if isOwner(userId) && isValidTimerState(incoming());
+      }
+    }
+  }
+}

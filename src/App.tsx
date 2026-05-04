@@ -1,7 +1,21 @@
 import * as XLSX from 'xlsx';
-import { Clock, Car, ChevronRight, Trash2, MapPin, Briefcase, BarChart3, Download } from 'lucide-react';
+import { Clock, Car, ChevronRight, Trash2, Briefcase, BarChart3, Download, LogOut, LogIn } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
+import { auth, db, googleProvider, handleFirestoreError, OperationType } from './firebase';
+import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
+import { 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  serverTimestamp,
+  getDoc
+} from 'firebase/firestore';
 
 // --- Types ---
 
@@ -69,68 +83,104 @@ const formatTimer = (minutes: number): string => {
 // --- Components ---
 
 export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('hours');
-  const [workEntries, setWorkEntries] = useState<WorkEntry[]>(() => {
-    const saved = localStorage.getItem('werktijd_work');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [travelEntries, setTravelEntries] = useState<TravelEntry[]>(() => {
-    const saved = localStorage.getItem('werktijd_travel');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [workEntries, setWorkEntries] = useState<WorkEntry[]>([]);
+  const [travelEntries, setTravelEntries] = useState<TravelEntry[]>([]);
 
   // Timer State
-  const [timer, setTimer] = useState<TimerState>(() => {
-    const saved = localStorage.getItem('werktijd_timer');
-    return saved ? JSON.parse(saved) : {
-      isActive: false,
-      startTime: null
-    };
+  const [timer, setTimer] = useState<TimerState>({
+    isActive: false,
+    startTime: null
   });
 
   const [currentTime, setCurrentTime] = useState(Date.now());
+
+  // Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Data Sync
+  useEffect(() => {
+    if (!user) {
+      setWorkEntries([]);
+      setTravelEntries([]);
+      setTimer({ isActive: false, startTime: null });
+      return;
+    }
+
+    const qWork = query(
+      collection(db, `users/${user.uid}/workEntries`),
+      orderBy('date', 'desc'),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubWork = onSnapshot(qWork, (snapshot) => {
+      setWorkEntries(snapshot.docs.map(d => d.data() as WorkEntry));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/workEntries`));
+
+    const qTravel = query(
+      collection(db, `users/${user.uid}/travelEntries`),
+      orderBy('date', 'desc'),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubTravel = onSnapshot(qTravel, (snapshot) => {
+      setTravelEntries(snapshot.docs.map(d => d.data() as TravelEntry));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/travelEntries`));
+
+    const unsubTimer = onSnapshot(doc(db, `users/${user.uid}/state/timer`), (snapshot) => {
+      if (snapshot.exists()) {
+        setTimer(snapshot.data() as TimerState);
+      }
+    }, (err) => handleFirestoreError(err, OperationType.GET, `users/${user.uid}/state/timer`));
+
+    return () => {
+      unsubWork();
+      unsubTravel();
+      unsubTimer();
+    };
+  }, [user]);
 
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('werktijd_work', JSON.stringify(workEntries));
-  }, [workEntries]);
-
-  useEffect(() => {
-    localStorage.setItem('werktijd_travel', JSON.stringify(travelEntries));
-  }, [travelEntries]);
-
-  useEffect(() => {
-    localStorage.setItem('werktijd_timer', JSON.stringify(timer));
-  }, [timer]);
-
-  // Pruning logic - keep only last 12 months
-  useEffect(() => {
+  // Pruning logic - keep only last 12 months (still applied on local view for safety)
+  const prunedWorkEntries = useMemo(() => {
     const twelveMonthsAgo = new Date();
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
     twelveMonthsAgo.setDate(1);
     twelveMonthsAgo.setHours(0, 0, 0, 0);
     
-    const prune = (entries: { date: string }[]) => 
-      entries.filter(e => {
-        // Ensure date string is parsed correctly without timezone issues
-        const entryDate = new Date(e.date + 'T00:00:00');
-        return entryDate >= twelveMonthsAgo;
-      });
+    return workEntries.filter(e => {
+      const entryDate = new Date(e.date + 'T00:00:00');
+      return entryDate >= twelveMonthsAgo;
+    });
+  }, [workEntries]);
 
-    setWorkEntries(prev => prune(prev) as WorkEntry[]);
-    setTravelEntries(prev => prune(prev) as TravelEntry[]);
-  }, []);
+  const prunedTravelEntries = useMemo(() => {
+    const twelveMonthsAgo = new Date();
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+    twelveMonthsAgo.setDate(1);
+    twelveMonthsAgo.setHours(0, 0, 0, 0);
+    
+    return travelEntries.filter(e => {
+      const entryDate = new Date(e.date + 'T00:00:00');
+      return entryDate >= twelveMonthsAgo;
+    });
+  }, [travelEntries]);
 
   const exportToExcel = (monthKey: string) => {
-    // Filter entries for the selected month using the same key generator as groupedMonthlyData
     const getMonthKey = (dateStr: string) => new Date(dateStr + 'T00:00:00').toLocaleString('nl', { month: 'long', year: 'numeric' });
 
-    const monthWork = workEntries.filter(e => getMonthKey(e.date) === monthKey);
-    const monthTravel = travelEntries.filter(e => getMonthKey(e.date) === monthKey);
+    const monthWork = prunedWorkEntries.filter(e => getMonthKey(e.date) === monthKey);
+    const monthTravel = prunedTravelEntries.filter(e => getMonthKey(e.date) === monthKey);
 
     // Create Work Sheet
     const workData = monthWork.map(e => ({
@@ -199,29 +249,35 @@ export default function App() {
   }, [timer, currentTime]);
 
   const totalWorkMin = useMemo(() => 
-    workEntries.reduce((acc, entry) => acc + calculateDuration(entry.startTime, entry.endTime, entry.breakTime), 0),
-  [workEntries]);
+    prunedWorkEntries.reduce((acc, entry) => acc + calculateDuration(entry.startTime, entry.endTime, entry.breakTime), 0),
+  [prunedWorkEntries]);
 
   const totalKm = useMemo(() => 
-    travelEntries.reduce((acc, entry) => acc + entry.distance, 0),
-  [travelEntries]);
+    prunedTravelEntries.reduce((acc, entry) => acc + entry.distance, 0),
+  [prunedTravelEntries]);
 
   const totalComp = useMemo(() => 
-    travelEntries.reduce((acc, entry) => acc + (entry.distance * (TRANSPORT_RATES[entry.type] || 0)), 0),
-  [travelEntries]);
+    prunedTravelEntries.reduce((acc, entry) => acc + (entry.distance * (TRANSPORT_RATES[entry.type] || 0)), 0),
+  [prunedTravelEntries]);
 
   const targetMinutes = 30 * 60 + 35;
   const progressPercent = Math.min(100, (totalWorkMin / targetMinutes) * 100);
 
-  const startTimer = () => {
-    setTimer({
-      isActive: true,
-      startTime: timer.startTime || Date.now(),
-    });
+  const startTimer = async () => {
+    if (!user) return;
+    try {
+      await setDoc(doc(db, `users/${user.uid}/state/timer`), {
+        isActive: true,
+        startTime: timer.startTime || Date.now(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/state/timer`);
+    }
   };
 
-  const stopTimer = () => {
-    if (!timer.startTime) return;
+  const stopTimer = async () => {
+    if (!user || !timer.startTime) return;
     
     const now = new Date();
     const startObj = new Date(timer.startTime);
@@ -229,37 +285,55 @@ export default function App() {
     const formatTime = (date: Date) => 
       `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
 
-    const newEntry: WorkEntry = {
-      id: crypto.randomUUID(),
+    const id = crypto.randomUUID();
+    const newEntry: any = {
+      id,
       date: startObj.toISOString().split('T')[0],
       startTime: formatTime(startObj),
       endTime: formatTime(now),
       breakTime: 0,
+      userId: user.uid,
+      createdAt: serverTimestamp(),
     };
 
-    setWorkEntries([newEntry, ...workEntries]);
-    setTimer({
-      isActive: false,
-      startTime: null,
-    });
+    try {
+      await setDoc(doc(db, `users/${user.uid}/workEntries/${id}`), newEntry);
+      await setDoc(doc(db, `users/${user.uid}/state/timer`), {
+        isActive: false,
+        startTime: null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'stopping timer');
+    }
   };
 
-  const addWorkEntryManual = (e: React.FormEvent<HTMLFormElement>) => {
+  const addWorkEntryManual = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!user) return;
     const formData = new FormData(e.currentTarget);
-    const newEntry: WorkEntry = {
-      id: crypto.randomUUID(),
+    const id = crypto.randomUUID();
+    const newEntry: any = {
+      id,
       date: formData.get('date') as string,
       startTime: formData.get('start') as string,
       endTime: formData.get('end') as string,
       breakTime: 0,
+      userId: user.uid,
+      createdAt: serverTimestamp(),
     };
-    setWorkEntries([newEntry, ...workEntries]);
-    e.currentTarget.reset();
+    
+    try {
+      await setDoc(doc(db, `users/${user.uid}/workEntries/${id}`), newEntry);
+      (e.target as HTMLFormElement).reset();
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'manual work entry');
+    }
   };
 
-  const addTravelEntry = (e: React.FormEvent<HTMLFormElement>) => {
+  const addTravelEntry = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!user) return;
     const formData = new FormData(e.currentTarget);
     const routeIndex = formData.get('route') as string;
     const isReturn = formData.get('return') === 'on';
@@ -276,19 +350,58 @@ export default function App() {
       description = `Aangepast traject`;
     }
 
-    const newEntry: TravelEntry = {
-      id: crypto.randomUUID(),
+    const id = crypto.randomUUID();
+    const newEntry: any = {
+      id,
       date: formData.get('date') as string,
       description,
       distance,
       type: formData.get('type') as TransportType,
+      userId: user.uid,
+      createdAt: serverTimestamp(),
     };
-    setTravelEntries([newEntry, ...travelEntries]);
-    e.currentTarget.reset();
+
+    try {
+      await setDoc(doc(db, `users/${user.uid}/travelEntries/${id}`), newEntry);
+      (e.target as HTMLFormElement).reset();
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'travel entry');
+    }
   };
 
-  const deleteWork = (id: string) => setWorkEntries(workEntries.filter(e => e.id !== id));
-  const deleteTravel = (id: string) => setTravelEntries(travelEntries.filter(e => e.id !== id));
+  const deleteWork = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, `users/${user.uid}/workEntries/${id}`));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}/workEntries/${id}`);
+    }
+  };
+
+  const deleteTravel = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, `users/${user.uid}/travelEntries/${id}`));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}/travelEntries/${id}`);
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const formatMonoTime = (totalMinutes: number) => {
     const h = Math.floor(totalMinutes / 60);
@@ -296,47 +409,87 @@ export default function App() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
   };
 
+  if (!authReady) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-brand-bg">
+        <div className="w-8 h-8 border-4 border-brand-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-brand-bg p-6">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card-panel p-10 max-w-md w-full text-center flex flex-col items-center gap-8"
+        >
+          <div className="w-16 h-16 bg-brand-primary rounded-2xl flex items-center justify-center text-white font-bold text-3xl shadow-xl shadow-brand-primary/20">W</div>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">Welkom bij Werktijd</h2>
+            <p className="text-slate-500 text-sm">Log in om je gewerkte uren en verplaatsingen te synchroniseren over al je toestellen.</p>
+          </div>
+          <button 
+            onClick={handleLogin}
+            className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 py-4 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm"
+          >
+            <LogIn size={20} />
+            Inloggen met Google
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-brand-bg text-slate-800 font-sans h-screen overflow-hidden">
-      {/* Sidebar Nav (Desktop) */}
-      <aside className="hidden md:flex w-20 bg-brand-sidebar flex-col items-center py-8 gap-10 shrink-0">
-        <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-brand-primary/20">W</div>
-        <nav className="flex flex-col gap-8">
+    <div className="min-h-screen flex bg-brand-bg text-slate-800 font-sans h-screen overflow-hidden">
+      {/* Sidebar Nav */}
+      <aside className="w-16 md:w-20 bg-brand-sidebar flex flex-col items-center py-6 md:py-8 gap-8 md:gap-10 shrink-0 z-50">
+        <div className="w-8 h-8 md:w-10 md:h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white font-bold text-lg md:text-xl shadow-lg shadow-brand-primary/20">W</div>
+        <nav className="flex flex-col gap-6 md:gap-8">
           <button 
-            id="nav-hours-desktop"
+            id="nav-hours"
             onClick={() => setActiveTab('hours')}
-            className={`p-3 rounded-lg transition-all ${activeTab === 'hours' ? 'bg-brand-primary/20 text-brand-primary' : 'text-slate-400 hover:text-white'}`}
+            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'hours' ? 'bg-brand-primary/20 text-brand-primary' : 'text-slate-400 hover:text-white'}`}
           >
-            <Clock size={24} />
+            <Clock size={20} className="md:w-6 md:h-6" />
           </button>
           <button 
-            id="nav-travel-desktop"
+            id="nav-travel"
             onClick={() => setActiveTab('travel')}
-            className={`p-3 rounded-lg transition-all ${activeTab === 'travel' ? 'bg-brand-primary/20 text-brand-primary' : 'text-slate-400 hover:text-white'}`}
+            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'travel' ? 'bg-brand-primary/20 text-brand-primary' : 'text-slate-400 hover:text-white'}`}
           >
-            <Car size={24} />
+            <Car size={20} className="md:w-6 md:h-6" />
           </button>
           <button 
-            id="nav-reports-desktop"
+            id="nav-reports"
             onClick={() => setActiveTab('reports')}
-            className={`p-3 rounded-lg transition-all ${activeTab === 'reports' ? 'bg-brand-primary/20 text-brand-primary' : 'text-slate-400 hover:text-white'}`}
+            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'reports' ? 'bg-brand-primary/20 text-brand-primary' : 'text-slate-400 hover:text-white'}`}
           >
-            <BarChart3 size={24} />
+            <BarChart3 size={20} className="md:w-6 md:h-6" />
           </button>
         </nav>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col p-4 md:p-8 gap-6 overflow-y-auto pb-24 md:pb-8">
+      <main className="flex-1 flex flex-col p-4 md:p-8 gap-6 overflow-y-auto">
         {/* Header Section */}
         <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end shrink-0 gap-4">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-slate-900">
               {activeTab === 'hours' ? 'Tijdregistratie' : activeTab === 'travel' ? 'Verplaatsingen' : 'Maandoverzichten'}
             </h1>
-            <p className="text-slate-500 text-sm font-medium">Overzicht van je professionele activiteiten</p>
+            <p className="text-slate-500 text-sm font-medium">Welkom, {user.displayName || 'Gebruiker'}</p>
           </div>
           <div className="flex gap-2 md:gap-4 w-full sm:w-auto">
+            <button 
+              onClick={handleLogout}
+              className="bg-white p-2 rounded-xl border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-all group"
+              title="Uitloggen"
+            >
+              <LogOut size={20} className="group-hover:scale-110 transition-transform" />
+            </button>
             <div className="bg-white px-3 md:px-4 py-2 rounded-xl shadow-sm border border-slate-200 flex-1 sm:min-w-32">
               <span className="label-tiny">Doel</span>
               <span className="text-base md:text-lg mono-value block">30:35</span>
@@ -498,7 +651,7 @@ export default function App() {
                   {activeTab === 'hours' ? 'Geregistreerde Uren' : activeTab === 'travel' ? 'Verplaatsing Historiek' : 'Overzicht per Maand'}
                 </h3>
                 <span className="text-[10px] font-bold text-slate-400 uppercase">
-                  {activeTab === 'hours' ? `${workEntries.length} items` : activeTab === 'travel' ? `${travelEntries.length} items` : `${groupedMonthlyData.length} maanden`}
+                  {activeTab === 'hours' ? `${prunedWorkEntries.length} items` : activeTab === 'travel' ? `${prunedTravelEntries.length} items` : `${groupedMonthlyData.length} maanden`}
                 </span>
               </div>
               
@@ -521,7 +674,7 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="text-sm divide-y divide-slate-100">
-                          {workEntries.map(entry => (
+                          {prunedWorkEntries.map(entry => (
                             <tr key={entry.id} className="group hover:bg-slate-50 transition-colors">
                               <td className="p-4 pl-6">
                                 <span className="font-semibold">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
@@ -549,7 +702,7 @@ export default function App() {
                       
                       {/* Mobile Cards */}
                       <div className="md:hidden divide-y divide-slate-100">
-                        {workEntries.map(entry => (
+                        {prunedWorkEntries.map(entry => (
                           <div key={entry.id} className="p-4 flex justify-between items-center bg-white active:bg-slate-50 transition-colors">
                             <div className="flex items-center gap-4">
                               <div className="bg-slate-100 px-2 py-1 rounded text-center min-w-12">
@@ -593,7 +746,7 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="text-sm divide-y divide-slate-100">
-                          {travelEntries.map(entry => (
+                          {prunedTravelEntries.map(entry => (
                             <tr key={entry.id} className="group hover:bg-slate-50 transition-colors">
                               <td className="p-4 pl-6">
                                 <span className="font-semibold">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
@@ -623,10 +776,10 @@ export default function App() {
                           ))}
                         </tbody>
                       </table>
-
+ 
                       {/* Mobile Cards */}
                       <div className="md:hidden divide-y divide-slate-100">
-                        {travelEntries.map(entry => (
+                        {prunedTravelEntries.map(entry => (
                           <div key={entry.id} className="p-4 bg-white active:bg-slate-50 transition-colors">
                             <div className="flex justify-between items-start mb-2">
                               <div className="flex items-center gap-3">
@@ -703,7 +856,7 @@ export default function App() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-                {(activeTab === 'hours' ? workEntries.length : activeTab === 'travel' ? travelEntries.length : 0) === 0 && activeTab !== 'reports' && (
+                {(activeTab === 'hours' ? prunedWorkEntries.length : activeTab === 'travel' ? prunedTravelEntries.length : 0) === 0 && activeTab !== 'reports' && (
                   <div className="flex flex-col items-center justify-center py-20 text-slate-300 text-center px-4">
                     <Briefcase size={48} className="mb-4 opacity-20" />
                     <p className="text-sm font-medium">Nog geen gegevens om weer te geven.</p>
@@ -715,32 +868,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* Bottom Nav (Mobile) */}
-      <nav className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] bg-white/80 backdrop-blur-xl border border-slate-200 rounded-3xl shadow-2xl z-50 px-4 py-2 flex items-center justify-around">
-        <button 
-          onClick={() => setActiveTab('hours')}
-          className={`flex flex-col items-center gap-1 p-3 rounded-2xl transition-all ${activeTab === 'hours' ? 'text-brand-primary' : 'text-slate-400'}`}
-        >
-          <Clock size={20} className={activeTab === 'hours' ? 'scale-110' : ''} />
-          <span className="text-[10px] font-bold uppercase tracking-widest">Uren</span>
-        </button>
-        <div className="w-px h-8 bg-slate-100" />
-        <button 
-          onClick={() => setActiveTab('travel')}
-          className={`flex flex-col items-center gap-1 p-3 rounded-2xl transition-all ${activeTab === 'travel' ? 'text-brand-primary' : 'text-slate-400'}`}
-        >
-          <Car size={20} className={activeTab === 'travel' ? 'scale-110' : ''} />
-          <span className="text-[10px] font-bold uppercase tracking-widest">Rit</span>
-        </button>
-        <div className="w-px h-8 bg-slate-100" />
-        <button 
-          onClick={() => setActiveTab('reports')}
-          className={`flex flex-col items-center gap-1 p-3 rounded-2xl transition-all ${activeTab === 'reports' ? 'text-brand-primary' : 'text-slate-400'}`}
-        >
-          <BarChart3 size={20} className={activeTab === 'reports' ? 'scale-110' : ''} />
-          <span className="text-[10px] font-bold uppercase tracking-widest">Rapport</span>
-        </button>
-      </nav>
     </div>
   );
 }
