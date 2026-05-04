@@ -85,6 +85,8 @@ const formatTimer = (minutes: number): string => {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('hours');
   const [workEntries, setWorkEntries] = useState<WorkEntry[]>([]);
   const [travelEntries, setTravelEntries] = useState<TravelEntry[]>([]);
@@ -388,10 +390,21 @@ export default function App() {
   };
 
   const handleLogin = async () => {
+    setLoginLoading(true);
+    setLoginError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      console.error("Login Error:", error);
+      if (error.code === 'auth/popup-blocked') {
+        setLoginError("De pop-up is geblokkeerd door je browser. Sta pop-ups toe voor deze site.");
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        // Ignore if user just closed it too quickly or another one opened
+      } else {
+        setLoginError(`Inloggen mislukt: ${error.message}`);
+      }
+    } finally {
+      setLoginLoading(false);
     }
   };
 
@@ -432,11 +445,25 @@ export default function App() {
           </div>
           <button 
             onClick={handleLogin}
-            className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 py-4 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm"
+            disabled={loginLoading}
+            className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 py-4 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-wait"
           >
-            <LogIn size={20} />
-            Inloggen met Google
+            {loginLoading ? (
+              <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+            ) : (
+              <LogIn size={20} />
+            )}
+            {loginLoading ? 'Bezig met inloggen...' : 'Inloggen met Google'}
           </button>
+          {loginError && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="mt-4 p-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-lg font-medium"
+            >
+              {loginError}
+            </motion.div>
+          )}
         </motion.div>
       </div>
     );
