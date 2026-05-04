@@ -111,27 +111,26 @@ export default function App() {
   useEffect(() => {
     const twelveMonthsAgo = new Date();
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+    twelveMonthsAgo.setDate(1);
+    twelveMonthsAgo.setHours(0, 0, 0, 0);
     
     const prune = (entries: { date: string }[]) => 
-      entries.filter(e => new Date(e.date) >= twelveMonthsAgo);
+      entries.filter(e => {
+        // Ensure date string is parsed correctly without timezone issues
+        const entryDate = new Date(e.date + 'T00:00:00');
+        return entryDate >= twelveMonthsAgo;
+      });
 
     setWorkEntries(prev => prune(prev) as WorkEntry[]);
     setTravelEntries(prev => prune(prev) as TravelEntry[]);
   }, []);
 
   const exportToExcel = (monthKey: string) => {
-    const [monthName, year] = monthKey.split(' ');
-    
-    // Filter entries for the selected month
-    const monthWork = workEntries.filter(e => {
-      const d = new Date(e.date);
-      return d.toLocaleString('nl', { month: 'long', year: 'numeric' }) === monthKey;
-    });
-    
-    const monthTravel = travelEntries.filter(e => {
-      const d = new Date(e.date);
-      return d.toLocaleString('nl', { month: 'long', year: 'numeric' }) === monthKey;
-    });
+    // Filter entries for the selected month using the same key generator as groupedMonthlyData
+    const getMonthKey = (dateStr: string) => new Date(dateStr + 'T00:00:00').toLocaleString('nl', { month: 'long', year: 'numeric' });
+
+    const monthWork = workEntries.filter(e => getMonthKey(e.date) === monthKey);
+    const monthTravel = travelEntries.filter(e => getMonthKey(e.date) === monthKey);
 
     // Create Work Sheet
     const workData = monthWork.map(e => ({
@@ -159,13 +158,13 @@ export default function App() {
     XLSX.utils.book_append_sheet(wb, wsWork, "Uren");
     XLSX.utils.book_append_sheet(wb, wsTravel, "Verplaatsingen");
 
-    XLSX.writeFile(wb, `Overzicht_${monthKey.replace(' ', '_')}.xlsx`);
+    XLSX.writeFile(wb, `Overzicht_${monthKey.replace(/[\s,]+/g, '_')}.xlsx`);
   };
 
   const groupedMonthlyData = useMemo(() => {
     const groups: Record<string, { workMin: number, travelComp: number, travelKm: number }> = {};
     
-    const getMonthKey = (dateStr: string) => new Date(dateStr).toLocaleString('nl', { month: 'long', year: 'numeric' });
+    const getMonthKey = (dateStr: string) => new Date(dateStr + 'T00:00:00').toLocaleString('nl', { month: 'long', year: 'numeric' });
 
     workEntries.forEach(e => {
       const key = getMonthKey(e.date);
@@ -183,9 +182,12 @@ export default function App() {
     return Object.entries(groups).sort((a, b) => {
       // Sort keys descending (newest first)
       const parse = (k: string) => {
-        const [m, y] = k.split(' ');
+        const parts = k.replace(',', '').split(' ');
+        const m = parts[0];
+        const y = parts[parts.length - 1]; // Year is usually last
         const months = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'];
-        return new Date(Number(y), months.indexOf(m.toLowerCase()), 1).getTime();
+        const monthIdx = months.indexOf(m.toLowerCase());
+        return new Date(Number(y), monthIdx !== -1 ? monthIdx : 0, 1).getTime();
       };
       return parse(b[0]) - parse(a[0]);
     });
@@ -352,108 +354,113 @@ export default function App() {
         <div className="flex flex-col lg:grid lg:grid-cols-12 gap-6 flex-1 min-h-0">
           
           {/* Input Section (Left/Top) */}
-          <section className="lg:col-span-4 flex flex-col gap-6 overflow-visible lg:overflow-y-auto pr-0 lg:pr-2">
-            {activeTab === 'hours' && (
-              <div className="card-panel p-6 flex flex-col shrink-0 bg-gradient-to-br from-white to-indigo-50/30">
-                <h3 className="label-tiny mb-4">Live Sessie</h3>
-                <div className="flex flex-col items-center justify-center py-6 gap-2">
-                  <div className="text-5xl font-mono font-light text-slate-800 tracking-tighter">
-                    {formatTimer(liveMinutes)}
+          {activeTab !== 'reports' && (
+            <section className="lg:col-span-4 flex flex-col gap-6 overflow-visible lg:overflow-y-auto pr-0 lg:pr-2">
+              {activeTab === 'hours' && (
+                <div className="card-panel p-6 flex flex-col shrink-0 bg-gradient-to-br from-white to-indigo-50/30">
+                  <h3 className="label-tiny mb-4">Live Sessie</h3>
+                  <div className="flex flex-col items-center justify-center py-6 gap-2">
+                    <div className="text-5xl font-mono font-light text-slate-800 tracking-tighter">
+                      {formatTimer(liveMinutes)}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${timer.isActive ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`} />
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        {timer.isActive ? 'Actief aan het werk' : 'Inactief'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${timer.isActive ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`} />
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      {timer.isActive ? 'Actief aan het werk' : 'Inactief'}
-                    </span>
+                  <div className="grid grid-cols-2 gap-3 mt-4">
+                    {!timer.isActive ? (
+                      <button onClick={startTimer} className="col-span-2 btn-primary bg-indigo-600 py-4 shadow-xl border-none">
+                        Start Nieuwe Sessie
+                      </button>
+                    ) : (
+                      <button onClick={stopTimer} className="col-span-2 bg-red-100 text-red-700 font-bold py-4 rounded-xl hover:bg-red-200 transition-colors">
+                        Stop Sessie
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3 mt-4">
-                  {!timer.isActive ? (
-                    <button onClick={startTimer} className="col-span-2 btn-primary bg-indigo-600 py-4 shadow-xl border-none">
-                      Start Nieuwe Sessie
-                    </button>
-                  ) : (
-                    <button onClick={stopTimer} className="col-span-2 bg-red-100 text-red-700 font-bold py-4 rounded-xl hover:bg-red-200 transition-colors">
-                      Stop Sessie
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
+              )}
 
-            <div className="card-panel p-6 flex flex-col shrink-0">
-              <h3 className="label-tiny mb-6">{activeTab === 'hours' ? 'Handmatige Registratie' : 'Nieuwe Verplaatsing'}</h3>
-              
-              <AnimatePresence mode="wait">
-                {activeTab === 'hours' ? (
-                  <motion.form 
-                    key="work-form-manual"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    onSubmit={addWorkEntryManual} 
-                    className="flex flex-col gap-4"
-                  >
-                    <div className="space-y-1">
-                      <label className="label-tiny">Datum</label>
-                      <input type="date" name="date" required className="input-field" defaultValue={new Date().toISOString().split('T')[0]} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
+              <div className="card-panel p-6 flex flex-col shrink-0">
+                <h3 className="label-tiny mb-6">{activeTab === 'hours' ? 'Handmatige Registratie' : 'Nieuwe Verplaatsing'}</h3>
+                
+                <AnimatePresence mode="wait">
+                  {activeTab === 'hours' ? (
+                    <motion.form 
+                      key="work-form-manual"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onSubmit={addWorkEntryManual} 
+                      className="flex flex-col gap-4"
+                    >
                       <div className="space-y-1">
-                        <label className="label-tiny">Start</label>
-                        <input type="time" name="start" required className="input-field" defaultValue="09:00" />
+                        <label className="label-tiny">Datum</label>
+                        <input type="date" name="date" required className="input-field" defaultValue={new Date().toISOString().split('T')[0]} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="label-tiny">Start</label>
+                          <input type="time" name="start" required className="input-field" defaultValue="09:00" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="label-tiny">Einde</label>
+                          <input type="time" name="end" required className="input-field" defaultValue="17:00" />
+                        </div>
+                      </div>
+                      <button type="submit" className="mt-2 w-full btn-primary bg-slate-800 hover:bg-slate-900 border-none">
+                        Handmatig Toevoegen
+                      </button>
+                    </motion.form>
+                  ) : (
+                    <motion.form 
+                      key="travel-form-preset"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onSubmit={addTravelEntry} 
+                      className="flex flex-col gap-4"
+                    >
+                      <div className="space-y-1">
+                        <label className="label-tiny">Datum</label>
+                        <input type="date" name="date" required className="input-field" defaultValue={new Date().toISOString().split('T')[0]} />
                       </div>
                       <div className="space-y-1">
-                        <label className="label-tiny">Einde</label>
-                        <input type="time" name="end" required className="input-field" defaultValue="17:00" />
+                        <label className="label-tiny">Selecteer Traject</label>
+                        <select name="route" className="input-field" defaultValue="0">
+                          {PRESET_ROUTES.map((route, i) => (
+                            <option key={i} value={i}>{route.label} ({route.km} km)</option>
+                          ))}
+                          <option value="custom">Aangepast traject...</option>
+                        </select>
                       </div>
-                    </div>
-                    <button type="submit" className="mt-2 w-full btn-primary bg-slate-800 hover:bg-slate-900 border-none">
-                      Handmatig Toevoegen
-                    </button>
-                  </motion.form>
-                ) : (
-                  <motion.form 
-                    key="travel-form-preset"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    onSubmit={addTravelEntry} 
-                    className="flex flex-col gap-4"
-                  >
-                    <div className="space-y-1">
-                      <label className="label-tiny">Datum</label>
-                      <input type="date" name="date" required className="input-field" defaultValue={new Date().toISOString().split('T')[0]} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="label-tiny">Selecteer Traject</label>
-                      <select name="route" className="input-field" defaultValue="0">
-                        {PRESET_ROUTES.map((route, i) => (
-                          <option key={i} value={i}>{route.label} ({route.km} km)</option>
-                        ))}
-                        <option value="custom">Aangepast traject...</option>
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-3 py-2">
-                       <input type="checkbox" name="return" id="is-return" className="w-4 h-4 rounded text-brand-primary" />
-                       <label htmlFor="is-return" className="text-xs font-bold text-slate-500 uppercase cursor-pointer">Heen en terug rit</label>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="label-tiny">Vervoer</label>
-                      <select name="type" className="input-field">
-                        <option value="auto">Auto (€0,4004/km)</option>
-                        <option value="fiets">Fiets (€0,21/km)</option>
-                      </select>
-                    </div>
-                    <button type="submit" className="mt-4 w-full btn-primary bg-slate-800 hover:bg-slate-900 border-none">
-                      Toevoegen
-                    </button>
-                  </motion.form>
-                )}
-              </AnimatePresence>
-            </div>
-          </section>
+                      <div className="flex items-center gap-3 py-2">
+                         <input type="checkbox" name="return" id="is-return" className="w-4 h-4 rounded text-brand-primary" />
+                         <label htmlFor="is-return" className="text-xs font-bold text-slate-500 uppercase cursor-pointer">Heen en terug rit</label>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="label-tiny">Vervoer</label>
+                        <select name="type" className="input-field">
+                          <option value="auto">Auto (€0,4004/km)</option>
+                          <option value="fiets">Fiets (€0,21/km)</option>
+                        </select>
+                      </div>
+                      <button type="submit" className="mt-4 w-full btn-primary bg-slate-800 hover:bg-slate-900 border-none">
+                        Toevoegen
+                      </button>
+                    </motion.form>
+                  )}
+                </AnimatePresence>
+              </div>
+            </section>
+          )}
 
           {/* List Section (Right/Bottom) */}
-          <section className="lg:col-span-8 flex flex-col gap-6 min-h-0">
+          <section className={`${activeTab === 'reports' ? 'lg:col-span-12' : 'lg:col-span-8'} flex flex-col gap-6 min-h-0`}>
+
             {/* Progress/Stats Summary */}
             <div className="card-panel p-4 md:p-6 shrink-0">
               <h3 className="label-tiny mb-4">Focus & Voortgang</h3>
