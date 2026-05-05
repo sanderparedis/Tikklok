@@ -30,12 +30,14 @@ service cloud.firestore {
     // Validation Blueprints
     function isValidWorkEntry(data) {
       return data.keys().hasAll(['id', 'date', 'startTime', 'endTime', 'breakTime', 'createdAt', 'updatedAt'])
-        && data.keys().size() == 7
+        && data.keys().size() >= 7 && data.keys().size() <= 10
         && data.id is string && data.id.size() <= 128
         && data.date is string && data.date.size() == 10
         && data.startTime is string && data.startTime.size() == 5
         && data.endTime is string && data.endTime.size() == 5
         && data.breakTime is number
+        && (!data.keys().contains('isFreeDay') || data.isFreeDay is bool)
+        && (!data.keys().contains('freeDayType') || (data.freeDayType is string && data.freeDayType.size() <= 100))
         && data.createdAt == request.time
         && data.updatedAt == request.time;
     }

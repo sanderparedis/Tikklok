@@ -10,10 +10,12 @@
         "startTime": { "type": "string", "description": "HH:mm format" },
         "endTime": { "type": "string", "description": "HH:mm format" },
         "breakTime": { "type": "number", "description": "Break time in minutes" },
+        "isFreeDay": { "type": "boolean" },
+        "freeDayType": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "date", "startTime", "endTime", "breakTime"]
+      "required": ["id", "date", "startTime", "endTime", "breakTime", "isFreeDay"]
     },
     "TravelEntry": {
       "title": "Travel Entry",
