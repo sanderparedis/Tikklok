@@ -43,6 +43,14 @@ interface TimerState {
   startTime: number | null;
 }
 
+type FreeDayType = 'vrije/facultatieve dag' | 'ziek' | 'feestdag';
+
+interface FreeDay {
+  id: string;
+  date: string;
+  type: FreeDayType;
+}
+
 const TRANSPORT_RATES: Record<TransportType, number> = {
   auto: 0.4004,
   fiets: 0.21
@@ -88,6 +96,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('hours');
   const [workEntries, setWorkEntries] = useState<WorkEntry[]>([]);
   const [travelEntries, setTravelEntries] = useState<TravelEntry[]>([]);
+  const [freeDays, setFreeDays] = useState<FreeDay[]>([]);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark' || 
@@ -155,20 +164,13 @@ export default function App() {
     const q = collection(db, 'users', user.uid, 'workEntries');
     return onSnapshot(q, (snapshot) => {
       const entries = snapshot.docs.map(doc => ({ ...doc.data() } as WorkEntry));
-      // Client-side sorting & 12-month pruning
-      const twelveMonthsAgo = new Date();
-      twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-      twelveMonthsAgo.setDate(1);
-      twelveMonthsAgo.setHours(0, 0, 0, 0);
-
-      const filteredAndSorted = entries
-        .filter(e => new Date(e.date + 'T00:00:00') >= twelveMonthsAgo)
-        .sort((a, b) => {
-          if (a.date !== b.date) return b.date.localeCompare(a.date);
-          return b.startTime.localeCompare(a.startTime);
-        });
-      
-      setWorkEntries(filteredAndSorted);
+      const sorted = [...entries].sort((a, b) => {
+        const dateA = new Date(a.date + 'T00:00:00').getTime();
+        const dateB = new Date(b.date + 'T00:00:00').getTime();
+        if (dateA !== dateB) return dateB - dateA;
+        return (b.startTime || '').localeCompare(a.startTime || '');
+      });
+      setWorkEntries(sorted);
     }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/workEntries`));
   }, [user]);
 
@@ -181,18 +183,31 @@ export default function App() {
     const q = collection(db, 'users', user.uid, 'travelEntries');
     return onSnapshot(q, (snapshot) => {
       const entries = snapshot.docs.map(doc => ({ ...doc.data() } as TravelEntry));
-      // Client-side sorting & 12-month pruning
-      const twelveMonthsAgo = new Date();
-      twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-      twelveMonthsAgo.setDate(1);
-      twelveMonthsAgo.setHours(0, 0, 0, 0);
-
-      const filteredAndSorted = entries
-        .filter(e => new Date(e.date + 'T00:00:00') >= twelveMonthsAgo)
-        .sort((a, b) => b.date.localeCompare(a.date));
-
-      setTravelEntries(filteredAndSorted);
+      const sorted = [...entries].sort((a, b) => {
+        const dateA = new Date(a.date + 'T00:00:00').getTime();
+        const dateB = new Date(b.date + 'T00:00:00').getTime();
+        return dateB - dateA;
+      });
+      setTravelEntries(sorted);
     }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/travelEntries`));
+  }, [user]);
+
+  // Sync free days
+  useEffect(() => {
+    if (!user) {
+      setFreeDays([]);
+      return;
+    }
+    const q = collection(db, 'users', user.uid, 'freeDays');
+    return onSnapshot(q, (snapshot) => {
+      const entries = snapshot.docs.map(doc => ({ ...doc.data() } as FreeDay));
+      const sorted = [...entries].sort((a, b) => {
+        const dateA = new Date(a.date + 'T00:00:00').getTime();
+        const dateB = new Date(b.date + 'T00:00:00').getTime();
+        return dateB - dateA;
+      });
+      setFreeDays(sorted);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/freeDays`));
   }, [user]);
 
   useEffect(() => {
@@ -289,6 +304,27 @@ export default function App() {
     return (currentTime - timer.startTime) / 60000;
   }, [timer, currentTime]);
 
+  const combinedEntries = useMemo(() => {
+    const combined: (
+      | ({ entryType: 'work' } & WorkEntry)
+      | ({ entryType: 'free' } & FreeDay)
+    )[] = [
+      ...workEntries.map(e => ({ ...e, entryType: 'work' as const })),
+      ...freeDays.map(e => ({ ...e, entryType: 'free' as const })),
+    ];
+
+    return combined.sort((a, b) => {
+      const dateA = new Date(a.date + 'T00:00:00').getTime();
+      const dateB = new Date(b.date + 'T00:00:00').getTime();
+      if (dateA !== dateB) return dateB - dateA;
+      
+      // If same date, work entries might have startTime, free days don't really have a secondary sort priority
+      const startA = (a as any).startTime || '';
+      const startB = (b as any).startTime || '';
+      return startB.localeCompare(startA);
+    });
+  }, [workEntries, freeDays]);
+
   const totalKm = useMemo(() => 
     travelEntries.reduce((acc, entry) => acc + entry.distance, 0),
   [travelEntries]);
@@ -297,8 +333,40 @@ export default function App() {
     travelEntries.reduce((acc, entry) => acc + (entry.distance * (TRANSPORT_RATES[entry.type] || 0)), 0),
   [travelEntries]);
 
-  const targetMinutes = 36 * 60;
-  const progressPercent = Math.min(100, ((currentWeekWorkMin + liveMinutes) / targetMinutes) * 100);
+  const { currentTargetMinutes, weeklyFreeDays } = useMemo(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(diff);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+    const weekFreeDays = freeDays.filter(fd => {
+      const d = new Date(fd.date + 'T00:00:00');
+      return d >= startOfWeek && d < endOfWeek;
+    });
+
+    let reduction = 0;
+    weekFreeDays.forEach(fd => {
+      const d = new Date(fd.date + 'T00:00:00');
+      // getDay(): 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+      if (d.getDay() === 3) {
+        reduction += 4 * 60; // 4 hours
+      } else {
+        reduction += 8 * 60; // 8 hours
+      }
+    });
+
+    return { 
+      currentTargetMinutes: Math.max(0, (36 * 60) - reduction),
+      weeklyFreeDays: weekFreeDays
+    };
+  }, [freeDays]);
+
+  const progressPercent = Math.min(100, ((currentWeekWorkMin + liveMinutes) / currentTargetMinutes) * 100);
 
   const startTimer = async () => {
     if (!user) return;
@@ -431,6 +499,30 @@ export default function App() {
     }
   };
 
+  const addFreeDay = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!user) return;
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    const dayId = crypto.randomUUID();
+    
+    const newEntry = {
+      id: dayId,
+      date: formData.get('date') as string,
+      type: formData.get('type') as FreeDayType,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      const entryRef = doc(db, 'users', user.uid, 'freeDays', dayId);
+      await setDoc(entryRef, newEntry);
+      form.reset();
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/freeDays/${dayId}`);
+    }
+  };
+
   const deleteWork = async (id: string) => {
     if (!user) return;
     try {
@@ -446,6 +538,15 @@ export default function App() {
       await deleteDoc(doc(db, 'users', user.uid, 'travelEntries', id));
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/travelEntries/${id}`);
+    }
+  };
+
+  const deleteFreeDay = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'users', user.uid, 'freeDays', id));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/freeDays/${id}`);
     }
   };
 
@@ -576,7 +677,7 @@ export default function App() {
           <div className="flex gap-2 md:gap-4 w-full sm:w-auto">
                 <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
               <span className="label-tiny">Doel</span>
-              <span className="text-base md:text-lg mono-value block">36:00</span>
+              <span className="text-base md:text-lg mono-value block">{formatMonoTime(currentTargetMinutes)}</span>
             </div>
             <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
               <span className="label-tiny">Gewerkte uren</span>
@@ -771,6 +872,29 @@ export default function App() {
                   )}
                 </AnimatePresence>
               </div>
+
+              {activeTab === 'hours' && (
+                <div className="card-panel p-6 flex flex-col shrink-0">
+                  <h3 className="label-tiny mb-6">Vrije Dag Toevoegen</h3>
+                  <form onSubmit={addFreeDay} className="flex flex-col gap-4">
+                    <div className="space-y-1">
+                      <label className="label-tiny">Datum</label>
+                      <input type="date" name="date" required className="input-field" defaultValue={new Date().toISOString().split('T')[0]} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="label-tiny">Type</label>
+                      <select name="type" required className="input-field">
+                        <option value="vrije/facultatieve dag">Vrije/facultatieve dag</option>
+                        <option value="feestdag">Feestdag</option>
+                        <option value="ziek">Ziek</option>
+                      </select>
+                    </div>
+                    <button type="submit" className="mt-2 w-full btn-primary bg-indigo-600 hover:bg-indigo-700 border-none">
+                      Toevoegen
+                    </button>
+                  </form>
+                </div>
+              )}
             </section>
           )}
 
@@ -814,7 +938,7 @@ export default function App() {
                   {activeTab === 'hours' ? 'Geregistreerde Uren' : activeTab === 'travel' ? 'Verplaatsing Historiek' : 'Overzicht per Maand'}
                 </h3>
                 <span className="text-[10px] font-bold text-slate-400 uppercase">
-                  {activeTab === 'hours' ? `${workEntries.length} items` : activeTab === 'travel' ? `${travelEntries.length} items` : `${groupedMonthlyData.length} maanden`}
+                  {activeTab === 'hours' ? `${combinedEntries.length} items` : activeTab === 'travel' ? `${travelEntries.length} items` : `${groupedMonthlyData.length} maanden`}
                 </span>
               </div>
               
@@ -830,56 +954,119 @@ export default function App() {
                       {/* Desktop Table */}
                       <div className="hidden md:block w-full">
                         <div className="divide-y divide-slate-100 dark:divide-slate-800 text-[var(--text-main)]">
-                          {workEntries.map(entry => (
-                            <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors grid grid-cols-[100px_1fr_140px_60px] gap-6 items-center px-6 py-4 text-sm">
-                              <div>
-                                <span className="font-semibold block whitespace-nowrap">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
-                                <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'short' })}</span>
+                          {combinedEntries.map(entry => {
+                            if (entry.entryType === 'free') {
+                              return (
+                                <div key={entry.id} className="group bg-indigo-50/20 dark:bg-indigo-900/10 hover:bg-indigo-50/40 dark:hover:bg-indigo-900/20 transition-colors grid grid-cols-[100px_1fr_140px_60px] gap-6 items-center px-6 py-4 text-sm">
+                                  <div>
+                                    <span className="font-semibold block whitespace-nowrap text-indigo-700 dark:text-indigo-300">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
+                                    <span className="text-[10px] text-indigo-400 uppercase font-bold">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'short' })}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border ${
+                                      entry.type === 'ziek' ? 'bg-red-50 text-red-500 border-red-100' : 
+                                      entry.type === 'feestdag' ? 'bg-amber-50 text-amber-500 border-amber-100' : 
+                                      'bg-indigo-50 text-indigo-500 border-indigo-100'
+                                    }`}>
+                                      {entry.type}
+                                    </span>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="text-xs font-bold text-indigo-400">
+                                      -{new Date(entry.date + 'T00:00:00').getDay() === 3 ? '4u' : '8u'} doel
+                                    </span>
+                                  </div>
+                                  <div className="text-right">
+                                    <button onClick={() => deleteFreeDay(entry.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors grid grid-cols-[100px_1fr_140px_60px] gap-6 items-center px-6 py-4 text-sm">
+                                <div>
+                                  <span className="font-semibold block whitespace-nowrap">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
+                                  <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'short' })}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.startTime}</span>
+                                  <ChevronRight size={10} className="text-slate-300" />
+                                  <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.endTime}</span>
+                                </div>
+                                <div className="text-right">
+                                  <span className="mono-value tabular-nums">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
+                                </div>
+                                <div className="text-right">
+                                  <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
                               </div>
-                              <div className="flex items-center gap-3">
-                                <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.startTime}</span>
-                                <ChevronRight size={10} className="text-slate-300" />
-                                <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.endTime}</span>
-                              </div>
-                              <div className="text-right">
-                                <span className="mono-value tabular-nums">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
-                              </div>
-                              <div className="text-right">
-                                <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                       
                       {/* Mobile Cards */}
                       <div className="md:hidden divide-y divide-slate-100">
-                        {workEntries.map(entry => (
-                          <div key={entry.id} className="p-4 flex justify-between items-center bg-[var(--panel-bg)] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                            <div className="flex items-center gap-4">
-                              <div className="bg-slate-100 px-2 py-1 rounded text-center min-w-12">
-                                <span className="block text-[10px] font-bold text-slate-400 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
-                                <span className="text-sm font-bold text-slate-700">{new Date(entry.date).getDate()}</span>
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2 text-xs font-medium text-slate-600 mb-1">
-                                  <span>{entry.startTime}</span>
-                                  <ChevronRight size={10} className="text-slate-300" />
-                                  <span>{entry.endTime}</span>
+                        {combinedEntries.map(entry => {
+                          if (entry.entryType === 'free') {
+                            return (
+                              <div key={entry.id} className="p-4 flex justify-between items-center bg-indigo-50/20 dark:bg-indigo-900/10 border-b border-indigo-100 dark:border-indigo-900/30">
+                                <div className="flex items-center gap-4">
+                                  <div className="bg-indigo-100 dark:bg-indigo-900/50 px-2 py-1 rounded text-center min-w-12 border border-indigo-200 dark:border-indigo-800">
+                                    <span className="block text-[10px] font-bold text-indigo-400 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
+                                    <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300">{new Date(entry.date).getDate()}</span>
+                                  </div>
+                                  <div>
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase text-xs ${
+                                      entry.type === 'ziek' ? 'text-red-500' : 
+                                      entry.type === 'feestdag' ? 'text-amber-500' : 
+                                      'text-indigo-500'
+                                    }`}>
+                                      {entry.type}
+                                    </span>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</p>
+                                  </div>
                                 </div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</span>
+                                <div className="flex items-center gap-4">
+                                  <span className="text-xs font-bold text-indigo-400">-{new Date(entry.date + 'T00:00:00').getDay() === 3 ? '4u' : '8u'}</span>
+                                  <button onClick={() => deleteFreeDay(entry.id)} className="p-2 text-slate-300 hover:text-red-500 transition-all">
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div key={entry.id} className="p-4 flex justify-between items-center bg-[var(--panel-bg)] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                              <div className="flex items-center gap-4">
+                                <div className="bg-slate-100 px-2 py-1 rounded text-center min-w-12">
+                                  <span className="block text-[10px] font-bold text-slate-400 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
+                                  <span className="text-sm font-bold text-slate-700">{new Date(entry.date).getDate()}</span>
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2 text-xs font-medium text-slate-600 mb-1">
+                                    <span>{entry.startTime}</span>
+                                    <ChevronRight size={10} className="text-slate-300" />
+                                    <span>{entry.endTime}</span>
+                                  </div>
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-4">
+                                <span className="mono-value text-sm">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
+                                <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 hover:text-red-500 transition-all">
+                                  <Trash2 size={16} />
+                                </button>
                               </div>
                             </div>
-                            <div className="flex items-center gap-4">
-                              <span className="mono-value text-sm">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
-                              <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 hover:text-red-500 transition-all">
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </motion.div>
                   ) : activeTab === 'travel' ? (
@@ -998,7 +1185,7 @@ export default function App() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-                {(activeTab === 'hours' ? workEntries.length : activeTab === 'travel' ? travelEntries.length : 0) === 0 && activeTab !== 'reports' && (
+                {(activeTab === 'hours' ? combinedEntries.length : activeTab === 'travel' ? travelEntries.length : 0) === 0 && activeTab !== 'reports' && (
                   <div className="flex flex-col items-center justify-center py-20 text-slate-300 text-center px-4">
                     <Briefcase size={48} className="mb-4 opacity-20" />
                     <p className="text-sm font-medium">Nog geen gegevens om weer te geven.</p>

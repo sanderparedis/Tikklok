@@ -61,6 +61,16 @@ service cloud.firestore {
         && (data.startTime == null || data.startTime is number);
     }
 
+    function isValidFreeDay(data) {
+      return data.keys().hasAll(['id', 'date', 'type', 'createdAt', 'updatedAt'])
+        && data.keys().size() == 5
+        && data.id is string && data.id.size() <= 128
+        && data.date is string && data.date.size() == 10
+        && data.type in ['vrije/facultatieve dag', 'ziek', 'feestdag']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
     // --- Collection Matches ---
 
     match /users/{userId} {
@@ -117,6 +127,29 @@ service cloud.firestore {
           );
           
         allow delete: if isOwner(userId) && isValidId(entryId);
+      }
+
+      // Free Days
+      match /freeDays/{dayId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(dayId);
+        
+        allow create: if isOwner(userId) 
+          && isValidId(dayId) 
+          && isValidFreeDay(incoming())
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+          
+        allow update: if isOwner(userId)
+          && isValidId(dayId)
+          && isValidFreeDay(incoming())
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['date', 'type', 'updatedAt'])
+          );
+          
+        allow delete: if isOwner(userId) && isValidId(dayId);
       }
     }
   }

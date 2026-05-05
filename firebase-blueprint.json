@@ -39,6 +39,19 @@
         "startTime": { "type": "number", "description": "Timestamp in ms" }
       },
       "required": ["isActive"]
+    },
+    "FreeDay": {
+      "title": "Free Day",
+      "description": "A record of a non-working day (e.g., holiday, sick leave).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "type": { "type": "string", "enum": ["vrije/facultatieve dag", "ziek", "feestdag"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "date", "type"]
     }
   },
   "firestore": {
@@ -49,6 +62,10 @@
     "/users/{userId}/travelEntries/{entryId}": {
       "schema": "TravelEntry",
       "description": "Travel history for a user."
+    },
+    "/users/{userId}/freeDays/{dayId}": {
+      "schema": "FreeDay",
+      "description": "Free days history for a user."
     },
     "/users/{userId}": {
       "schema": "UserTimer",
