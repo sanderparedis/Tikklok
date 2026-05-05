@@ -1,5 +1,4 @@
 import * as XLSX from 'xlsx';
-import mosaLogo from './assets/images/regenerated_image_1777968353460.png';
 import { Clock, Car, ChevronRight, Trash2, MapPin, Briefcase, BarChart3, Download, LogIn, LogOut, Sun, Moon, GraduationCap, School } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
@@ -465,12 +464,8 @@ export default function App() {
         <div className="w-full max-w-md">
           <div className="card-panel p-8 text-center flex flex-col gap-8">
             <div className="flex justify-center">
-              <div className="w-24 h-24 bg-white rounded-[2rem] flex items-center justify-center p-3 shadow-2xl shadow-brand-primary/20 rotate-3 border-2 border-brand-primary/10">
-                <img 
-                  src={mosaLogo} 
-                  alt="Mosa-RT Logo" 
-                  className="w-full h-full object-contain"
-                />
+              <div className="w-24 h-24 bg-gradient-to-tr from-brand-primary to-brand-secondary rounded-[2rem] flex items-center justify-center text-white shadow-2xl shadow-brand-primary/20 rotate-3">
+                <School size={48} />
               </div>
             </div>
             <div>
@@ -495,14 +490,12 @@ export default function App() {
       {/* Sidebar Nav */}
       <aside className="w-16 md:w-20 bg-brand-sidebar flex flex-col items-center py-6 md:py-8 gap-8 md:gap-10 shrink-0 z-50">
         <div className="flex flex-col items-center gap-1 group">
-          <div className="w-12 h-12 md:w-14 md:h-14 bg-white rounded-xl flex items-center justify-center shadow-xl shadow-brand-primary/20 overflow-hidden border-2 border-brand-primary/10 p-1.5 active:scale-95 transition-transform">
-            <img 
-              src={mosaLogo} 
-              alt="Mosa-RT Logo" 
-              className="w-full h-full object-contain"
-            />
+          <div className="w-10 h-10 md:w-12 md:h-12 bg-[var(--panel-bg)] rounded-xl flex items-center justify-center text-brand-primary font-bold text-xl md:text-2xl shadow-xl shadow-brand-primary/10 overflow-hidden border-2 border-brand-primary/20">
+            <div className="relative w-full h-full flex items-center justify-center bg-gradient-to-tr from-brand-primary to-brand-secondary/80">
+              <School className="text-white w-6 h-6 md:w-7 md:h-7" />
+            </div>
           </div>
-          <span className="text-[10px] font-black tracking-tighter text-white/70 uppercase group-hover:text-white transition-colors">Mosa-RT</span>
+          <span className="text-[8px] font-black tracking-tighter text-white/40 uppercase group-hover:text-white/80 transition-colors">Mosa-RT</span>
         </div>
         
         <nav className="flex flex-col gap-6 md:gap-8 flex-1">
