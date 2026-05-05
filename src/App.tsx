@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import mosaLogo from './assets/images/regenerated_image_1777968353460.png';
 import { Clock, Car, ChevronRight, Trash2, MapPin, Briefcase, BarChart3, Download, LogIn, LogOut, Sun, Moon, GraduationCap, School } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
@@ -48,14 +49,14 @@ const TRANSPORT_RATES: Record<TransportType, number> = {
   fiets: 0.21
 };
 
-const PRESET_ROUTES = [
-  { label: 'Neeroeteren - Campus', km: 7.7 },
-  { label: 'Neeroeteren - Kinrooi', km: 7.7 },
-  { label: 'Neeroeteren - Maaseik', km: 8.2 },
-  { label: 'Campus - Kinrooi', km: 5.4 },
-  { label: 'Campus - Maaseik', km: 2.1 },
-  { label: 'Maaseik - Kinrooi', km: 7.0 }
-];
+const LOCATIONS = ['Neeroeteren', 'Campus', 'Kinrooi', 'Maaseik'];
+
+const ROUTE_DISTANCES: Record<string, Record<string, number>> = {
+  'Neeroeteren': { 'Campus': 7.7, 'Kinrooi': 7.7, 'Maaseik': 8.2 },
+  'Campus': { 'Neeroeteren': 7.7, 'Kinrooi': 5.4, 'Maaseik': 2.1 },
+  'Kinrooi': { 'Neeroeteren': 7.7, 'Campus': 5.4, 'Maaseik': 7.0 },
+  'Maaseik': { 'Neeroeteren': 8.2, 'Campus': 2.1, 'Kinrooi': 7.0 }
+};
 
 // --- Helpers ---
 
@@ -114,7 +115,9 @@ export default function App() {
   });
 
   const [currentTime, setCurrentTime] = useState(Date.now());
-  const [travelRouteType, setTravelRouteType] = useState<string>('0');
+  const [travelRouteType, setTravelRouteType] = useState<string>('preset');
+  const [startLocation, setStartLocation] = useState<string>(LOCATIONS[0]);
+  const [endLocation, setEndLocation] = useState<string>(LOCATIONS[1]);
 
   // Auth listener
   useEffect(() => {
@@ -362,7 +365,7 @@ export default function App() {
     e.preventDefault();
     if (!user) return;
     const formData = new FormData(e.currentTarget);
-    const routeIndex = formData.get('route') as string;
+    const routeCategory = formData.get('routeCategory') as string;
     const isReturn = formData.get('return') === 'on';
     const transportType = formData.get('type') as TransportType;
     
@@ -370,25 +373,28 @@ export default function App() {
     let description = "";
     let finalType = transportType;
 
-    if (routeIndex === "nascholing") {
+    if (routeCategory === "nascholing") {
       const enkel = Number(formData.get('distance_manual'));
       distance = enkel * 2;
       description = `Nascholing (H&T)`;
-      finalType = 'auto'; // Only possible with car
-    } else if (routeIndex === "woonwerk_fiets") {
+      finalType = 'auto';
+    } else if (routeCategory === "woonwerk_fiets") {
       const enkel = Number(formData.get('distance_manual'));
       distance = enkel * 2;
       description = `Woon-werkverkeer Fiets (H&T)`;
       finalType = 'fiets';
-    } else if (routeIndex === "custom") {
+    } else if (routeCategory === "custom") {
       const dist = Number(formData.get('distance_manual'));
       distance = dist * (isReturn ? 2 : 1);
       description = `Aangepast traject ${isReturn ? '(H&T)' : ''}`;
       finalType = transportType;
     } else {
-      const route = PRESET_ROUTES[Number(routeIndex)];
-      distance = route.km * (isReturn ? 2 : 1);
-      description = `${route.label} ${isReturn ? '(H&T)' : ''}`;
+      const start = formData.get('startLocation') as string;
+      const end = formData.get('endLocation') as string;
+      const baseDistance = ROUTE_DISTANCES[start]?.[end] || 0;
+      
+      distance = baseDistance * (isReturn ? 2 : 1);
+      description = `${start} - ${end} ${isReturn ? '(H&T)' : ''}`;
       finalType = transportType;
     }
 
@@ -461,7 +467,7 @@ export default function App() {
             <div className="flex justify-center">
               <div className="w-24 h-24 bg-white rounded-[2rem] flex items-center justify-center p-3 shadow-2xl shadow-brand-primary/20 rotate-3 border-2 border-brand-primary/10">
                 <img 
-                  src="/src/assets/images/regenerated_image_1777968353460.png" 
+                  src={mosaLogo} 
                   alt="Mosa-RT Logo" 
                   className="w-full h-full object-contain"
                 />
@@ -491,7 +497,7 @@ export default function App() {
         <div className="flex flex-col items-center gap-1 group">
           <div className="w-12 h-12 md:w-14 md:h-14 bg-white rounded-xl flex items-center justify-center shadow-xl shadow-brand-primary/20 overflow-hidden border-2 border-brand-primary/10 p-1.5 active:scale-95 transition-transform">
             <img 
-              src="/src/assets/images/regenerated_image_1777968353460.png" 
+              src={mosaLogo} 
               alt="Mosa-RT Logo" 
               className="w-full h-full object-contain"
             />
@@ -653,25 +659,59 @@ export default function App() {
                         <input type="date" name="date" required className="input-field" defaultValue={new Date().toISOString().split('T')[0]} />
                       </div>
                       <div className="space-y-1">
-                        <label className="label-tiny">Selecteer Traject / Type</label>
+                        <label className="label-tiny">Categorie</label>
                         <select 
-                          name="route" 
+                          name="routeCategory" 
                           className="input-field" 
                           value={travelRouteType}
                           onChange={(e) => setTravelRouteType(e.target.value)}
                         >
-                          <optgroup label="Vaste Trajecten">
-                            {PRESET_ROUTES.map((route, i) => (
-                              <option key={i} value={i}>{route.label} ({route.km} km)</option>
-                            ))}
-                          </optgroup>
-                          <optgroup label="Speciale Categorieën">
-                            <option value="nascholing">Nascholing (Auto, H&T)</option>
-                            <option value="woonwerk_fiets">Woon-werkverkeer (Fiets, H&T)</option>
-                          </optgroup>
+                          <option value="preset">Vast Traject</option>
+                          <option value="nascholing">Nascholing (Auto, H&T)</option>
+                          <option value="woonwerk_fiets">Woon-werkverkeer (Fiets, H&T)</option>
                           <option value="custom">Handmatig traject...</option>
                         </select>
                       </div>
+
+                      {travelRouteType === 'preset' && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="label-tiny">Vertrek</label>
+                            <select 
+                              name="startLocation" 
+                              className="input-field"
+                              value={startLocation}
+                              onChange={(e) => setStartLocation(e.target.value)}
+                            >
+                              {LOCATIONS.map(loc => (
+                                <option key={loc} value={loc}>{loc}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="label-tiny">Bestemming</label>
+                            <select 
+                              name="endLocation" 
+                              className="input-field"
+                              value={endLocation}
+                              onChange={(e) => setEndLocation(e.target.value)}
+                            >
+                              {LOCATIONS.map(loc => (
+                                <option key={loc} value={loc}>{loc}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
+                      {travelRouteType === 'preset' && (
+                        <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Afstand</p>
+                          <p className="text-sm font-mono font-bold text-brand-primary">
+                            {ROUTE_DISTANCES[startLocation]?.[endLocation] || 0} km
+                          </p>
+                        </div>
+                      )}
 
                       {(travelRouteType === 'custom' || travelRouteType === 'nascholing' || travelRouteType === 'woonwerk_fiets') && (
                         <div className="space-y-1">
@@ -782,26 +822,20 @@ export default function App() {
                     >
                       {/* Desktop Table */}
                       <div className="hidden md:block w-full">
-                        <div className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700 sticky top-0 z-10 grid grid-cols-[100px_1fr_120px_60px] items-center px-6 py-3 label-tiny text-slate-400">
-                          <div>Datum</div>
-                          <div className="pl-2">Tijdstippen</div>
-                          <div className="text-right">Totaal</div>
-                          <div className="text-right"></div>
-                        </div>
                         <div className="divide-y divide-slate-100 dark:divide-slate-800 text-[var(--text-main)]">
                           {workEntries.map(entry => (
-                            <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors grid grid-cols-[100px_1fr_120px_60px] items-center px-6 py-4 text-sm">
+                            <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors grid grid-cols-[100px_1fr_140px_60px] gap-6 items-center px-6 py-4 text-sm">
                               <div>
-                                <span className="font-semibold block">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
+                                <span className="font-semibold block whitespace-nowrap">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
                                 <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'short' })}</span>
                               </div>
-                              <div className="flex items-center gap-3 pl-2">
+                              <div className="flex items-center gap-3">
                                 <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.startTime}</span>
                                 <ChevronRight size={10} className="text-slate-300" />
                                 <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.endTime}</span>
                               </div>
                               <div className="text-right">
-                                <span className="mono-value">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
+                                <span className="mono-value tabular-nums">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
                               </div>
                               <div className="text-right">
                                 <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
@@ -850,20 +884,13 @@ export default function App() {
                     >
                       {/* Desktop Table */}
                       <div className="hidden md:block w-full">
-                        <div className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700 sticky top-0 z-10 grid grid-cols-[90px_1fr_120px_130px_60px] items-center px-6 py-3 label-tiny text-slate-400">
-                          <div>Datum</div>
-                          <div className="pl-4">Traject</div>
-                          <div>Vervoer</div>
-                          <div className="text-right">Afstand / Kosten</div>
-                          <div className="text-right"></div>
-                        </div>
                         <div className="divide-y divide-slate-100 dark:divide-slate-800 text-[var(--text-main)]">
                           {travelEntries.map(entry => (
-                            <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors grid grid-cols-[90px_1fr_120px_130px_60px] items-center px-6 py-4 text-sm">
+                            <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors grid grid-cols-[90px_1fr_100px_130px_60px] gap-6 items-center px-6 py-4 text-sm">
                               <div className="font-semibold text-[var(--text-muted)]">
                                 {new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}
                               </div>
-                              <div className="font-medium pr-4 truncate tracking-tight pl-4">{entry.description}</div>
+                              <div className="font-medium truncate tracking-tight">{entry.description}</div>
                               <div className="flex items-center">
                                 <span className={`px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-tight min-w-[60px] text-center ${
                                   entry.type === 'auto' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : 'bg-green-500/10 text-green-500 border border-green-500/20'
