@@ -368,6 +368,61 @@ export default function App() {
 
   const progressPercent = Math.min(100, ((currentWeekWorkMin + liveMinutes) / currentTargetMinutes) * 100);
 
+  const overtimeBalance = useMemo(() => {
+    const weeks: Record<string, { worked: number, freeDays: FreeDay[] }> = {};
+    
+    const getWeekKey = (dateStr: string) => {
+      const d = new Date(dateStr + 'T00:00:00');
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      const start = new Date(d);
+      start.setDate(diff);
+      start.setHours(0, 0, 0, 0);
+      return start.toISOString().split('T')[0];
+    };
+
+    // Initialize current week to ensure it's included
+    const currentWeekKey = getWeekKey(new Date().toISOString().split('T')[0]);
+    weeks[currentWeekKey] = { worked: 0, freeDays: [] };
+
+    // Group work
+    workEntries.forEach(e => {
+      const key = getWeekKey(e.date);
+      if (!weeks[key]) weeks[key] = { worked: 0, freeDays: [] };
+      weeks[key].worked += calculateDuration(e.startTime, e.endTime, e.breakTime);
+    });
+
+    // Add live minutes to current week
+    weeks[currentWeekKey].worked += liveMinutes;
+
+    // Group free days
+    freeDays.forEach(fd => {
+      const key = getWeekKey(fd.date);
+      if (!weeks[key]) weeks[key] = { worked: 0, freeDays: [] };
+      weeks[key].freeDays.push(fd);
+    });
+
+    let totalBalance = 0;
+    Object.keys(weeks).forEach(key => {
+      // Exclude current week from the cumulative overtime balance
+      if (key === currentWeekKey) return;
+
+      let weekTarget = 36 * 60;
+      weeks[key].freeDays.forEach(fd => {
+        const d = new Date(fd.date + 'T00:00:00');
+        if (d.getDay() === 3) {
+          weekTarget -= 4 * 60;
+        } else {
+          weekTarget -= 8 * 60;
+        }
+      });
+      weekTarget = Math.max(0, weekTarget);
+      totalBalance += (weeks[key].worked - weekTarget);
+    });
+
+    return totalBalance;
+  }, [workEntries, freeDays, liveMinutes]);
+
   const startTimer = async () => {
     if (!user) return;
     try {
@@ -685,6 +740,20 @@ export default function App() {
                 {formatMonoTime(currentWeekWorkMin + liveMinutes)}
               </span>
             </div>
+            <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
+              <span className="label-tiny">Overuren</span>
+              <span className={`text-base md:text-lg mono-value block ${overtimeBalance >= 0 ? 'text-indigo-600' : 'text-red-500'}`}>
+                {overtimeBalance >= 0 ? '+' : ''}{formatMonoTime(Math.abs(overtimeBalance))}
+              </span>
+            </div>
+            <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
+              <span className="label-tiny">KM Totaal</span>
+              <span className="text-base md:text-lg mono-value block text-slate-900 dark:text-slate-100">{totalKm.toFixed(1)} km</span>
+            </div>
+            <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
+              <span className="label-tiny">Vergoeding</span>
+              <span className="text-base md:text-lg mono-value block text-green-600">€{totalComp.toFixed(2)}</span>
+            </div>
           </div>
         </header>
 
@@ -696,6 +765,47 @@ export default function App() {
             <section className="lg:col-span-4 flex flex-col gap-6 overflow-visible lg:overflow-y-auto pr-0 lg:pr-2">
               {activeTab === 'hours' && (
                 <div className="card-panel p-6 flex flex-col shrink-0 bg-gradient-to-br from-[var(--panel-bg)] to-brand-primary/5">
+                  <h3 className="label-tiny mb-4">Focus & Voortgang</h3>
+                  <div className="space-y-6">
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Weekdoel</span>
+                        <span className="text-[10px] font-bold text-brand-primary uppercase tabular-nums">{progressPercent.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${progressPercent}%` }}
+                          className="h-full bg-brand-primary"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Overuren Saldo</span>
+                        <span className={`text-[10px] font-bold uppercase tabular-nums ${overtimeBalance >= 0 ? 'text-indigo-600' : 'text-red-500'}`}>
+                          {overtimeBalance >= 0 ? '+' : '-'}{formatMinutes(Math.abs(overtimeBalance))}
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden relative">
+                        {/* Overtime bar: normalized to a large but reasonable "goal" or just showing relative filling */}
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(100, (Math.abs(overtimeBalance) / (40 * 60)) * 100)}%` }}
+                          className={`h-full ${overtimeBalance >= 0 ? 'bg-indigo-500' : 'bg-red-500'}`}
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-2 font-medium">
+                        Totaal gecumuleerd saldo over alle weken
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'hours' && (
+                <div className="card-panel p-6 flex flex-col shrink-0 bg-gradient-to-br from-[var(--panel-bg)] to-indigo-500/5">
                   <h3 className="label-tiny mb-4">Live Sessie</h3>
                   <div className="flex flex-col items-center justify-center py-6 gap-2">
                     <div className="text-5xl font-mono font-light text-[var(--text-main)] tracking-tighter">
@@ -900,36 +1010,6 @@ export default function App() {
 
           {/* List Section (Right/Bottom) */}
           <section className={`${activeTab === 'reports' ? 'lg:col-span-12' : 'lg:col-span-8'} flex flex-col gap-6 min-h-0`}>
-
-            {/* Progress/Stats Summary */}
-            <div className="card-panel p-4 md:p-6 shrink-0">
-              <h3 className="label-tiny mb-4">Focus & Voortgang</h3>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-6">
-                <div className="flex-1">
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <motion.div 
-                      key="progress-bar"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${progressPercent}%` }}
-                      className="h-full bg-brand-primary"
-                    />
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-2 font-medium">
-                    {progressPercent.toFixed(1)}% van je wekelijkse doel bereikt
-                  </p>
-                </div>
-                <div className="flex gap-4 border-t sm:border-t-0 sm:border-l border-slate-100 pt-4 sm:pt-0 sm:pl-6 shrink-0">
-                  <div className="text-right flex-1 sm:flex-none">
-                    <span className="label-tiny">KM Totaal</span>
-                    <span className="mono-value text-slate-900">{totalKm.toFixed(1)}</span>
-                  </div>
-                  <div className="text-right flex-1 sm:flex-none">
-                    <span className="label-tiny">Vergoeding</span>
-                    <span className="mono-value text-green-600">€{totalComp.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
 
             {/* List Table */}
             <div className="card-panel flex-1 flex flex-col min-h-0 overflow-hidden">
