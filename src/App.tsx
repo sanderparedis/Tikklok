@@ -325,13 +325,29 @@ export default function App() {
     });
   }, [workEntries, freeDays]);
 
-  const totalKm = useMemo(() => 
-    travelEntries.reduce((acc, entry) => acc + entry.distance, 0),
-  [travelEntries]);
+  const totalKmForMonth = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    return travelEntries
+      .filter(entry => {
+        const d = new Date(entry.date + 'T00:00:00');
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      })
+      .reduce((acc, entry) => acc + entry.distance, 0);
+  }, [travelEntries]);
 
-  const totalComp = useMemo(() => 
-    travelEntries.reduce((acc, entry) => acc + (entry.distance * (TRANSPORT_RATES[entry.type] || 0)), 0),
-  [travelEntries]);
+  const totalCompForMonth = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    return travelEntries
+      .filter(entry => {
+        const d = new Date(entry.date + 'T00:00:00');
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      })
+      .reduce((acc, entry) => acc + (entry.distance * (TRANSPORT_RATES[entry.type] || 0)), 0);
+  }, [travelEntries]);
 
   const { currentTargetMinutes, weeklyFreeDays } = useMemo(() => {
     const now = new Date();
@@ -732,27 +748,32 @@ export default function App() {
           <div className="flex gap-2 md:gap-4 w-full sm:w-auto">
                 <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
               <span className="label-tiny">Doel</span>
-              <span className="text-base md:text-lg mono-value block">{formatMonoTime(currentTargetMinutes)}</span>
+              <span className="text-base md:text-lg mono-value block text-[var(--text-main)]">{formatMonoTime(currentTargetMinutes)}</span>
             </div>
             <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
               <span className="label-tiny">Gewerkte uren</span>
-              <span className={`text-base md:text-lg mono-value block ${progressPercent >= 100 ? 'text-green-600' : 'text-brand-primary'}`}>
+              <span className={`text-base md:text-lg mono-value block ${progressPercent >= 100 ? 'text-green-600 dark:text-green-400' : 'text-brand-primary'}`}>
                 {formatMonoTime(currentWeekWorkMin + liveMinutes)}
               </span>
             </div>
             <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
               <span className="label-tiny">Overuren</span>
-              <span className={`text-base md:text-lg mono-value block ${overtimeBalance >= 0 ? 'text-indigo-600' : 'text-red-500'}`}>
-                {overtimeBalance >= 0 ? '+' : ''}{formatMonoTime(Math.abs(overtimeBalance))}
+              <span className={`text-base md:text-lg mono-value block ${
+                overtimeBalance > 20 * 60 ? 'text-purple-600 dark:text-purple-400' : 
+                overtimeBalance > 0 ? 'text-green-600 dark:text-green-400' : 
+                overtimeBalance < 0 ? 'text-red-500 dark:text-red-400' :
+                'text-[var(--text-main)]'
+              }`}>
+                {overtimeBalance > 0 ? '+' : ''}{formatMonoTime(Math.abs(overtimeBalance))}
               </span>
             </div>
             <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
               <span className="label-tiny">KM Totaal</span>
-              <span className="text-base md:text-lg mono-value block text-slate-900 dark:text-slate-100">{totalKm.toFixed(1)} km</span>
+              <span className="text-base md:text-lg mono-value block text-slate-900 dark:text-slate-100">{totalKmForMonth.toFixed(1)} km</span>
             </div>
             <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
               <span className="label-tiny">Vergoeding</span>
-              <span className="text-base md:text-lg mono-value block text-green-600">€{totalComp.toFixed(2)}</span>
+              <span className="text-base md:text-lg mono-value block text-green-600">€{totalCompForMonth.toFixed(2)}</span>
             </div>
           </div>
         </header>
@@ -779,26 +800,6 @@ export default function App() {
                           className="h-full bg-brand-primary"
                         />
                       </div>
-                    </div>
-                    
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Overuren Saldo</span>
-                        <span className={`text-[10px] font-bold uppercase tabular-nums ${overtimeBalance >= 0 ? 'text-indigo-600' : 'text-red-500'}`}>
-                          {overtimeBalance >= 0 ? '+' : '-'}{formatMinutes(Math.abs(overtimeBalance))}
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden relative">
-                        {/* Overtime bar: normalized to a large but reasonable "goal" or just showing relative filling */}
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(100, (Math.abs(overtimeBalance) / (40 * 60)) * 100)}%` }}
-                          className={`h-full ${overtimeBalance >= 0 ? 'bg-indigo-500' : 'bg-red-500'}`}
-                        />
-                      </div>
-                      <p className="text-[10px] text-slate-400 mt-2 font-medium">
-                        Totaal gecumuleerd saldo over alle weken
-                      </p>
                     </div>
                   </div>
                 </div>

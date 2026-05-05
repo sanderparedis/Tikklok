@@ -54,5 +54,5 @@
 }
 
 .mono-value {
-  @apply font-mono font-bold text-[var(--text-main)];
+  @apply font-mono font-bold;
 }
