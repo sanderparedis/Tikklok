@@ -2,22 +2,22 @@
   "entities": {
     "WorkEntry": {
       "title": "Work Entry",
-      "description": "A record of hours worked on a specific day",
+      "description": "A record of time worked on a specific date.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "date": { "type": "string", "format": "date" },
-        "startTime": { "type": "string" },
-        "endTime": { "type": "string" },
-        "breakTime": { "type": "integer" },
+        "startTime": { "type": "string", "description": "HH:mm format" },
+        "endTime": { "type": "string", "description": "HH:mm format" },
+        "breakTime": { "type": "number", "description": "Break time in minutes" },
         "createdAt": { "type": "string", "format": "date-time" },
-        "userId": { "type": "string" }
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "date", "startTime", "endTime", "breakTime", "userId"]
+      "required": ["id", "date", "startTime", "endTime", "breakTime"]
     },
     "TravelEntry": {
       "title": "Travel Entry",
-      "description": "A record of a professional trip",
+      "description": "A record of professional travel.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -26,18 +26,17 @@
         "distance": { "type": "number" },
         "type": { "type": "string", "enum": ["auto", "fiets"] },
         "createdAt": { "type": "string", "format": "date-time" },
-        "userId": { "type": "string" }
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "date", "description", "distance", "type", "userId"]
+      "required": ["id", "date", "description", "distance", "type"]
     },
-    "TimerState": {
-      "title": "Timer State",
-      "description": "The current state of the active work timer",
+    "UserTimer": {
+      "title": "User Timer State",
+      "description": "The active timer state for a user.",
       "type": "object",
       "properties": {
         "isActive": { "type": "boolean" },
-        "startTime": { "type": "number" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "startTime": { "type": "number", "description": "Timestamp in ms" }
       },
       "required": ["isActive"]
     }
@@ -45,15 +44,15 @@
   "firestore": {
     "/users/{userId}/workEntries/{entryId}": {
       "schema": "WorkEntry",
-      "description": "Collection of work entries for a specific user"
+      "description": "Work history for a user."
     },
     "/users/{userId}/travelEntries/{entryId}": {
       "schema": "TravelEntry",
-      "description": "Collection of travel entries for a specific user"
+      "description": "Travel history for a user."
     },
-    "/users/{userId}/state/timer": {
-      "schema": "TimerState",
-      "description": "The persistent timer state for a user"
+    "/users/{userId}": {
+      "schema": "UserTimer",
+      "description": "User profile and active timer state."
     }
   }
 }

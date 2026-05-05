@@ -1,20 +1,20 @@
 import * as XLSX from 'xlsx';
-import { Clock, Car, ChevronRight, Trash2, Briefcase, BarChart3, Download, LogOut, LogIn } from 'lucide-react';
+import { Clock, Car, ChevronRight, Trash2, MapPin, Briefcase, BarChart3, Download, LogIn, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
-import { auth, db, googleProvider, handleFirestoreError, OperationType } from './firebase';
-import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
+import { auth, db, signInWithGoogle, logout, OperationType, handleFirestoreError } from './lib/firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import { 
   collection, 
-  query, 
-  where, 
-  orderBy, 
   onSnapshot, 
+  query, 
+  orderBy, 
   doc, 
   setDoc, 
   deleteDoc, 
   serverTimestamp,
-  getDoc
+  getDoc,
+  updateDoc
 } from 'firebase/firestore';
 
 // --- Types ---
@@ -84,9 +84,7 @@ const formatTimer = (minutes: number): string => {
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState(false);
-  const [loginLoading, setLoginLoading] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('hours');
   const [workEntries, setWorkEntries] = useState<WorkEntry[]>([]);
   const [travelEntries, setTravelEntries] = useState<TravelEntry[]>([]);
@@ -99,53 +97,81 @@ export default function App() {
 
   const [currentTime, setCurrentTime] = useState(Date.now());
 
-  // Auth Listener
+  // Auth listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    return onAuthStateChanged(auth, (u) => {
       setUser(u);
-      setAuthReady(true);
+      setLoading(false);
     });
-    return () => unsubscribe();
   }, []);
 
-  // Data Sync
+  // Sync Timer from Firestore
+  useEffect(() => {
+    if (!user) return;
+    const userRef = doc(db, 'users', user.uid);
+    return onSnapshot(userRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setTimer({
+          isActive: data.isActive || false,
+          startTime: data.startTime || null
+        });
+      }
+    }, (error) => {
+       // Only log if it's not a missing doc (expected on first login)
+       if (error.code !== 'permission-denied') {
+         handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
+       }
+    });
+  }, [user]);
+
+  // Sync work entries
   useEffect(() => {
     if (!user) {
       setWorkEntries([]);
-      setTravelEntries([]);
-      setTimer({ isActive: false, startTime: null });
       return;
     }
+    const q = collection(db, 'users', user.uid, 'workEntries');
+    return onSnapshot(q, (snapshot) => {
+      const entries = snapshot.docs.map(doc => ({ ...doc.data() } as WorkEntry));
+      // Client-side sorting & 12-month pruning
+      const twelveMonthsAgo = new Date();
+      twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+      twelveMonthsAgo.setDate(1);
+      twelveMonthsAgo.setHours(0, 0, 0, 0);
 
-    const qWork = query(
-      collection(db, `users/${user.uid}/workEntries`),
-      orderBy('date', 'desc'),
-      orderBy('createdAt', 'desc')
-    );
-    const unsubWork = onSnapshot(qWork, (snapshot) => {
-      setWorkEntries(snapshot.docs.map(d => d.data() as WorkEntry));
-    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/workEntries`));
+      const filteredAndSorted = entries
+        .filter(e => new Date(e.date + 'T00:00:00') >= twelveMonthsAgo)
+        .sort((a, b) => {
+          if (a.date !== b.date) return b.date.localeCompare(a.date);
+          return b.startTime.localeCompare(a.startTime);
+        });
+      
+      setWorkEntries(filteredAndSorted);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/workEntries`));
+  }, [user]);
 
-    const qTravel = query(
-      collection(db, `users/${user.uid}/travelEntries`),
-      orderBy('date', 'desc'),
-      orderBy('createdAt', 'desc')
-    );
-    const unsubTravel = onSnapshot(qTravel, (snapshot) => {
-      setTravelEntries(snapshot.docs.map(d => d.data() as TravelEntry));
-    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/travelEntries`));
+  // Sync travel entries
+  useEffect(() => {
+    if (!user) {
+      setTravelEntries([]);
+      return;
+    }
+    const q = collection(db, 'users', user.uid, 'travelEntries');
+    return onSnapshot(q, (snapshot) => {
+      const entries = snapshot.docs.map(doc => ({ ...doc.data() } as TravelEntry));
+      // Client-side sorting & 12-month pruning
+      const twelveMonthsAgo = new Date();
+      twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+      twelveMonthsAgo.setDate(1);
+      twelveMonthsAgo.setHours(0, 0, 0, 0);
 
-    const unsubTimer = onSnapshot(doc(db, `users/${user.uid}/state/timer`), (snapshot) => {
-      if (snapshot.exists()) {
-        setTimer(snapshot.data() as TimerState);
-      }
-    }, (err) => handleFirestoreError(err, OperationType.GET, `users/${user.uid}/state/timer`));
+      const filteredAndSorted = entries
+        .filter(e => new Date(e.date + 'T00:00:00') >= twelveMonthsAgo)
+        .sort((a, b) => b.date.localeCompare(a.date));
 
-    return () => {
-      unsubWork();
-      unsubTravel();
-      unsubTimer();
-    };
+      setTravelEntries(filteredAndSorted);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/travelEntries`));
   }, [user]);
 
   useEffect(() => {
@@ -153,36 +179,12 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Pruning logic - keep only last 12 months (still applied on local view for safety)
-  const prunedWorkEntries = useMemo(() => {
-    const twelveMonthsAgo = new Date();
-    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-    twelveMonthsAgo.setDate(1);
-    twelveMonthsAgo.setHours(0, 0, 0, 0);
-    
-    return workEntries.filter(e => {
-      const entryDate = new Date(e.date + 'T00:00:00');
-      return entryDate >= twelveMonthsAgo;
-    });
-  }, [workEntries]);
-
-  const prunedTravelEntries = useMemo(() => {
-    const twelveMonthsAgo = new Date();
-    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-    twelveMonthsAgo.setDate(1);
-    twelveMonthsAgo.setHours(0, 0, 0, 0);
-    
-    return travelEntries.filter(e => {
-      const entryDate = new Date(e.date + 'T00:00:00');
-      return entryDate >= twelveMonthsAgo;
-    });
-  }, [travelEntries]);
-
   const exportToExcel = (monthKey: string) => {
+    // Filter entries for the selected month using the same key generator as groupedMonthlyData
     const getMonthKey = (dateStr: string) => new Date(dateStr + 'T00:00:00').toLocaleString('nl', { month: 'long', year: 'numeric' });
 
-    const monthWork = prunedWorkEntries.filter(e => getMonthKey(e.date) === monthKey);
-    const monthTravel = prunedTravelEntries.filter(e => getMonthKey(e.date) === monthKey);
+    const monthWork = workEntries.filter(e => getMonthKey(e.date) === monthKey);
+    const monthTravel = travelEntries.filter(e => getMonthKey(e.date) === monthKey);
 
     // Create Work Sheet
     const workData = monthWork.map(e => ({
@@ -251,16 +253,16 @@ export default function App() {
   }, [timer, currentTime]);
 
   const totalWorkMin = useMemo(() => 
-    prunedWorkEntries.reduce((acc, entry) => acc + calculateDuration(entry.startTime, entry.endTime, entry.breakTime), 0),
-  [prunedWorkEntries]);
+    workEntries.reduce((acc, entry) => acc + calculateDuration(entry.startTime, entry.endTime, entry.breakTime), 0),
+  [workEntries]);
 
   const totalKm = useMemo(() => 
-    prunedTravelEntries.reduce((acc, entry) => acc + entry.distance, 0),
-  [prunedTravelEntries]);
+    travelEntries.reduce((acc, entry) => acc + entry.distance, 0),
+  [travelEntries]);
 
   const totalComp = useMemo(() => 
-    prunedTravelEntries.reduce((acc, entry) => acc + (entry.distance * (TRANSPORT_RATES[entry.type] || 0)), 0),
-  [prunedTravelEntries]);
+    travelEntries.reduce((acc, entry) => acc + (entry.distance * (TRANSPORT_RATES[entry.type] || 0)), 0),
+  [travelEntries]);
 
   const targetMinutes = 30 * 60 + 35;
   const progressPercent = Math.min(100, (totalWorkMin / targetMinutes) * 100);
@@ -268,13 +270,13 @@ export default function App() {
   const startTimer = async () => {
     if (!user) return;
     try {
-      await setDoc(doc(db, `users/${user.uid}/state/timer`), {
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
         isActive: true,
         startTime: timer.startTime || Date.now(),
-        updatedAt: serverTimestamp(),
-      });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/state/timer`);
+      }, { merge: true });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${user.uid}`);
     }
   };
 
@@ -283,30 +285,32 @@ export default function App() {
     
     const now = new Date();
     const startObj = new Date(timer.startTime);
+    const entryId = crypto.randomUUID();
     
     const formatTime = (date: Date) => 
       `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
 
-    const id = crypto.randomUUID();
-    const newEntry: any = {
-      id,
+    const newEntry = {
+      id: entryId,
       date: startObj.toISOString().split('T')[0],
       startTime: formatTime(startObj),
       endTime: formatTime(now),
       breakTime: 0,
-      userId: user.uid,
       createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     };
 
     try {
-      await setDoc(doc(db, `users/${user.uid}/workEntries/${id}`), newEntry);
-      await setDoc(doc(db, `users/${user.uid}/state/timer`), {
+      const workEntryRef = doc(db, 'users', user.uid, 'workEntries', entryId);
+      const userRef = doc(db, 'users', user.uid);
+      
+      await setDoc(workEntryRef, newEntry);
+      await setDoc(userRef, {
         isActive: false,
         startTime: null,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'stopping timer');
+      }, { merge: true });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/workEntries/${entryId}`);
     }
   };
 
@@ -314,22 +318,24 @@ export default function App() {
     e.preventDefault();
     if (!user) return;
     const formData = new FormData(e.currentTarget);
-    const id = crypto.randomUUID();
-    const newEntry: any = {
-      id,
+    const entryId = crypto.randomUUID();
+    
+    const newEntry = {
+      id: entryId,
       date: formData.get('date') as string,
       startTime: formData.get('start') as string,
       endTime: formData.get('end') as string,
       breakTime: 0,
-      userId: user.uid,
       createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     };
-    
+
     try {
-      await setDoc(doc(db, `users/${user.uid}/workEntries/${id}`), newEntry);
-      (e.target as HTMLFormElement).reset();
+      const entryRef = doc(db, 'users', user.uid, 'workEntries', entryId);
+      await setDoc(entryRef, newEntry);
+      e.currentTarget.reset();
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'manual work entry');
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/workEntries/${entryId}`);
     }
   };
 
@@ -352,67 +358,41 @@ export default function App() {
       description = `Aangepast traject`;
     }
 
-    const id = crypto.randomUUID();
-    const newEntry: any = {
-      id,
+    const entryId = crypto.randomUUID();
+    const newEntry = {
+      id: entryId,
       date: formData.get('date') as string,
       description,
       distance,
       type: formData.get('type') as TransportType,
-      userId: user.uid,
       createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     };
 
     try {
-      await setDoc(doc(db, `users/${user.uid}/travelEntries/${id}`), newEntry);
-      (e.target as HTMLFormElement).reset();
+      const entryRef = doc(db, 'users', user.uid, 'travelEntries', entryId);
+      await setDoc(entryRef, newEntry);
+      e.currentTarget.reset();
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'travel entry');
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/travelEntries/${entryId}`);
     }
   };
 
   const deleteWork = async (id: string) => {
     if (!user) return;
     try {
-      await deleteDoc(doc(db, `users/${user.uid}/workEntries/${id}`));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}/workEntries/${id}`);
+      await deleteDoc(doc(db, 'users', user.uid, 'workEntries', id));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/workEntries/${id}`);
     }
   };
 
   const deleteTravel = async (id: string) => {
     if (!user) return;
     try {
-      await deleteDoc(doc(db, `users/${user.uid}/travelEntries/${id}`));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}/travelEntries/${id}`);
-    }
-  };
-
-  const handleLogin = async () => {
-    setLoginLoading(true);
-    setLoginError(null);
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error: any) {
-      console.error("Login Error:", error);
-      if (error.code === 'auth/popup-blocked') {
-        setLoginError("De pop-up is geblokkeerd door je browser. Sta pop-ups toe voor deze site.");
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        // Ignore if user just closed it too quickly or another one opened
-      } else {
-        setLoginError(`Inloggen mislukt: ${error.message}`);
-      }
-    } finally {
-      setLoginLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error(error);
+      await deleteDoc(doc(db, 'users', user.uid, 'travelEntries', id));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/travelEntries/${id}`);
     }
   };
 
@@ -422,49 +402,40 @@ export default function App() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
   };
 
-  if (!authReady) {
+  if (loading) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-brand-bg">
-        <div className="w-8 h-8 border-4 border-brand-primary border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-brand-bg">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin" />
+          <p className="text-slate-400 font-medium animate-pulse">Laden...</p>
+        </div>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-brand-bg p-6">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="card-panel p-10 max-w-md w-full text-center flex flex-col items-center gap-8"
-        >
-          <div className="w-16 h-16 bg-brand-primary rounded-2xl flex items-center justify-center text-white font-bold text-3xl shadow-xl shadow-brand-primary/20">W</div>
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">Welkom bij Werktijd</h2>
-            <p className="text-slate-500 text-sm">Log in om je gewerkte uren en verplaatsingen te synchroniseren over al je toestellen.</p>
-          </div>
-          <button 
-            onClick={handleLogin}
-            disabled={loginLoading}
-            className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 py-4 rounded-xl font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-wait"
-          >
-            {loginLoading ? (
-              <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
-            ) : (
-              <LogIn size={20} />
-            )}
-            {loginLoading ? 'Bezig met inloggen...' : 'Inloggen met Google'}
-          </button>
-          {loginError && (
-            <motion.div 
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              className="mt-4 p-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-lg font-medium"
+      <div className="min-h-screen flex items-center justify-center bg-brand-bg p-4">
+        <div className="w-full max-w-md">
+          <div className="card-panel p-8 text-center flex flex-col gap-8">
+            <div className="flex justify-center">
+              <div className="w-20 h-20 bg-brand-primary rounded-3xl flex items-center justify-center text-white font-bold text-4xl shadow-2xl shadow-brand-primary/40 rotate-3">
+                W
+              </div>
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 mb-2">Welkom bij Werktijd</h1>
+              <p className="text-slate-500 font-medium">Log in om je professionaliteit te professionaliseren.</p>
+            </div>
+            <button 
+              onClick={signInWithGoogle}
+              className="flex items-center justify-center gap-3 w-full py-4 px-6 bg-slate-900 text-white rounded-2xl font-bold text-lg hover:bg-slate-800 transition-all shadow-xl hover:shadow-slate-200"
             >
-              {loginError}
-            </motion.div>
-          )}
-        </motion.div>
+              <LogIn size={20} />
+              Inloggen met Google
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -496,6 +467,19 @@ export default function App() {
           >
             <BarChart3 size={20} className="md:w-6 md:h-6" />
           </button>
+          
+          <div className="mt-auto flex flex-col gap-6">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-brand-primary/20 overflow-hidden shadow-sm">
+              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} alt="avatar" className="w-full h-full object-cover" />
+            </div>
+            <button 
+              onClick={logout}
+              className="p-2.5 md:p-3 rounded-lg text-slate-400 hover:text-red-400 transition-all"
+              title="Uitloggen"
+            >
+              <LogOut size={20} className="md:w-6 md:h-6" />
+            </button>
+          </div>
         </nav>
       </aside>
 
@@ -507,16 +491,9 @@ export default function App() {
             <h1 className="text-xl md:text-2xl font-bold text-slate-900">
               {activeTab === 'hours' ? 'Tijdregistratie' : activeTab === 'travel' ? 'Verplaatsingen' : 'Maandoverzichten'}
             </h1>
-            <p className="text-slate-500 text-sm font-medium">Welkom, {user.displayName || 'Gebruiker'}</p>
+            <p className="text-slate-500 text-sm font-medium">Overzicht van je professionele activiteiten</p>
           </div>
           <div className="flex gap-2 md:gap-4 w-full sm:w-auto">
-            <button 
-              onClick={handleLogout}
-              className="bg-white p-2 rounded-xl border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-all group"
-              title="Uitloggen"
-            >
-              <LogOut size={20} className="group-hover:scale-110 transition-transform" />
-            </button>
             <div className="bg-white px-3 md:px-4 py-2 rounded-xl shadow-sm border border-slate-200 flex-1 sm:min-w-32">
               <span className="label-tiny">Doel</span>
               <span className="text-base md:text-lg mono-value block">30:35</span>
@@ -678,7 +655,7 @@ export default function App() {
                   {activeTab === 'hours' ? 'Geregistreerde Uren' : activeTab === 'travel' ? 'Verplaatsing Historiek' : 'Overzicht per Maand'}
                 </h3>
                 <span className="text-[10px] font-bold text-slate-400 uppercase">
-                  {activeTab === 'hours' ? `${prunedWorkEntries.length} items` : activeTab === 'travel' ? `${prunedTravelEntries.length} items` : `${groupedMonthlyData.length} maanden`}
+                  {activeTab === 'hours' ? `${workEntries.length} items` : activeTab === 'travel' ? `${travelEntries.length} items` : `${groupedMonthlyData.length} maanden`}
                 </span>
               </div>
               
@@ -701,7 +678,7 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="text-sm divide-y divide-slate-100">
-                          {prunedWorkEntries.map(entry => (
+                          {workEntries.map(entry => (
                             <tr key={entry.id} className="group hover:bg-slate-50 transition-colors">
                               <td className="p-4 pl-6">
                                 <span className="font-semibold">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
@@ -729,7 +706,7 @@ export default function App() {
                       
                       {/* Mobile Cards */}
                       <div className="md:hidden divide-y divide-slate-100">
-                        {prunedWorkEntries.map(entry => (
+                        {workEntries.map(entry => (
                           <div key={entry.id} className="p-4 flex justify-between items-center bg-white active:bg-slate-50 transition-colors">
                             <div className="flex items-center gap-4">
                               <div className="bg-slate-100 px-2 py-1 rounded text-center min-w-12">
@@ -773,7 +750,7 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="text-sm divide-y divide-slate-100">
-                          {prunedTravelEntries.map(entry => (
+                          {travelEntries.map(entry => (
                             <tr key={entry.id} className="group hover:bg-slate-50 transition-colors">
                               <td className="p-4 pl-6">
                                 <span className="font-semibold">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
@@ -803,10 +780,10 @@ export default function App() {
                           ))}
                         </tbody>
                       </table>
- 
+
                       {/* Mobile Cards */}
                       <div className="md:hidden divide-y divide-slate-100">
-                        {prunedTravelEntries.map(entry => (
+                        {travelEntries.map(entry => (
                           <div key={entry.id} className="p-4 bg-white active:bg-slate-50 transition-colors">
                             <div className="flex justify-between items-start mb-2">
                               <div className="flex items-center gap-3">
@@ -883,7 +860,7 @@ export default function App() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-                {(activeTab === 'hours' ? prunedWorkEntries.length : activeTab === 'travel' ? prunedTravelEntries.length : 0) === 0 && activeTab !== 'reports' && (
+                {(activeTab === 'hours' ? workEntries.length : activeTab === 'travel' ? travelEntries.length : 0) === 0 && activeTab !== 'reports' && (
                   <div className="flex flex-col items-center justify-center py-20 text-slate-300 text-center px-4">
                     <Briefcase size={48} className="mb-4 opacity-20" />
                     <p className="text-sm font-medium">Nog geen gegevens om weer te geven.</p>

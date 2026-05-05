@@ -1,24 +1,29 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-export async function testConnection() {
+export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
+export const logout = () => signOut(auth);
+
+// Helper to check connection
+async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    if(error instanceof Error && error.message.includes('the client is offline')) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
       console.error("Please check your Firebase configuration.");
     }
   }
 }
 
-// Error handling helper
+testConnection();
+
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
@@ -37,11 +42,6 @@ export interface FirestoreErrorInfo {
     email?: string | null;
     emailVerified?: boolean | null;
     isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
   }
 }
 
@@ -53,11 +53,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
       email: auth.currentUser?.email,
       emailVerified: auth.currentUser?.emailVerified,
       isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
     },
     operationType,
     path
