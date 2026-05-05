@@ -6,9 +6,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Helper functions
+    // --- Helper Functions ---
+    
     function isSignedIn() {
-      return request.auth != null;
+      return request.auth != null && request.auth.token.email_verified == true;
     }
 
     function isOwner(userId) {
@@ -16,7 +17,7 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
     }
 
     function incoming() {
@@ -27,19 +28,18 @@ service cloud.firestore {
       return resource.data;
     }
 
-    // Validation Blueprints
+    // --- Validation Blueprints ---
+
     function isValidWorkEntry(data) {
       return data.keys().hasAll(['id', 'date', 'startTime', 'endTime', 'breakTime', 'createdAt', 'updatedAt'])
-        && data.keys().size() >= 7 && data.keys().size() <= 10
+        && data.keys().size() == 7
         && data.id is string && data.id.size() <= 128
         && data.date is string && data.date.size() == 10
         && data.startTime is string && data.startTime.size() == 5
         && data.endTime is string && data.endTime.size() == 5
         && data.breakTime is number
-        && (!data.keys().contains('isFreeDay') || data.isFreeDay is bool)
-        && (!data.keys().contains('freeDayType') || (data.freeDayType is string && data.freeDayType.size() <= 100))
-        && data.createdAt == request.time
-        && data.updatedAt == request.time;
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
     }
 
     function isValidTravelEntry(data) {
@@ -50,8 +50,8 @@ service cloud.firestore {
         && data.description is string && data.description.size() <= 500
         && data.distance is number
         && data.type in ['auto', 'fiets']
-        && data.createdAt == request.time
-        && data.updatedAt == request.time;
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
     }
 
     function isValidUserTimer(data) {
@@ -61,27 +61,62 @@ service cloud.firestore {
         && (data.startTime == null || data.startTime is number);
     }
 
-    // User Profile & Status
+    // --- Collection Matches ---
+
     match /users/{userId} {
       allow get: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUserTimer(incoming());
-      allow update: if isOwner(userId) && isValidUserTimer(incoming()) 
+      
+      allow create: if isOwner(userId) 
+        && isValidUserTimer(incoming());
+      
+      allow update: if isOwner(userId) 
+        && isValidUserTimer(incoming())
         && incoming().diff(existing()).affectedKeys().hasOnly(['isActive', 'startTime']);
 
       // Work Entries
       match /workEntries/{entryId} {
         allow list: if isOwner(userId);
-        allow get: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(entryId) && isValidWorkEntry(incoming());
-        allow delete: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(entryId);
+        
+        allow create: if isOwner(userId) 
+          && isValidId(entryId) 
+          && isValidWorkEntry(incoming())
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+          
+        allow update: if isOwner(userId)
+          && isValidId(entryId)
+          && isValidWorkEntry(incoming())
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['date', 'startTime', 'endTime', 'breakTime', 'updatedAt'])
+          );
+          
+        allow delete: if isOwner(userId) && isValidId(entryId);
       }
 
       // Travel Entries
       match /travelEntries/{entryId} {
         allow list: if isOwner(userId);
-        allow get: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(entryId) && isValidTravelEntry(incoming());
-        allow delete: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(entryId);
+        
+        allow create: if isOwner(userId) 
+          && isValidId(entryId) 
+          && isValidTravelEntry(incoming())
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+          
+        allow update: if isOwner(userId)
+          && isValidId(entryId)
+          && isValidTravelEntry(incoming())
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['date', 'description', 'distance', 'type', 'updatedAt'])
+          );
+          
+        allow delete: if isOwner(userId) && isValidId(entryId);
       }
     }
   }

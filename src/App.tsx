@@ -28,8 +28,6 @@ interface WorkEntry {
   startTime: string;
   endTime: string;
   breakTime: number; // minutes
-  isFreeDay?: boolean;
-  freeDayType?: string;
 }
 
 interface TravelEntry {
@@ -270,52 +268,26 @@ export default function App() {
     });
   }, [workEntries, travelEntries]);
 
+  const currentWeekWorkMin = useMemo(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(diff);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    return workEntries
+      .filter(e => {
+        const entryDate = new Date(e.date + 'T00:00:00');
+        return entryDate >= startOfWeek;
+      })
+      .reduce((acc, entry) => acc + calculateDuration(entry.startTime, entry.endTime, entry.breakTime), 0);
+  }, [workEntries]);
+
   const liveMinutes = useMemo(() => {
     if (!timer.isActive || !timer.startTime) return 0;
     return (currentTime - timer.startTime) / 60000;
   }, [timer, currentTime]);
-
-  const getWeekNumber = (d: Date) => {
-    const date = new Date(d.getTime());
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
-    const week1 = new Date(date.getFullYear(), 0, 4);
-    return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
-  };
-
-  const getWeekKey = (dateStr: string) => {
-    const d = new Date(dateStr + 'T00:00:00');
-    const year = d.getFullYear();
-    const week = getWeekNumber(d);
-    return `${year}-W${week.toString().padStart(2, '0')}`;
-  };
-
-  const currentWeekKey = useMemo(() => getWeekKey(new Date().toISOString().split('T')[0]), []);
-
-  const currentWeekEntries = useMemo(() => {
-    return workEntries.filter(e => getWeekKey(e.date) === currentWeekKey);
-  }, [workEntries, currentWeekKey]);
-
-  const weeklyWorkMin = useMemo(() => 
-    currentWeekEntries.reduce((acc, entry) => acc + (entry.isFreeDay ? 0 : calculateDuration(entry.startTime, entry.endTime, entry.breakTime)), 0),
-  [currentWeekEntries]);
-
-  const weeklyTargetMinutes = useMemo(() => {
-    const BASE_GOAL = 36 * 60;
-    const reductionMinutes = currentWeekEntries.reduce((acc, entry) => {
-      if (entry.isFreeDay) {
-        const d = new Date(entry.date + 'T00:00:00');
-        const dayOfWeek = d.getDay(); // 3 is Wednesday
-        return acc + (dayOfWeek === 3 ? 4 * 60 : 8 * 60);
-      }
-      return acc;
-    }, 0);
-    return Math.max(0, BASE_GOAL - reductionMinutes);
-  }, [currentWeekEntries]);
-
-  const totalWorkMin = useMemo(() => 
-    workEntries.reduce((acc, entry) => acc + (entry.isFreeDay ? 0 : calculateDuration(entry.startTime, entry.endTime, entry.breakTime)), 0),
-  [workEntries]);
 
   const totalKm = useMemo(() => 
     travelEntries.reduce((acc, entry) => acc + entry.distance, 0),
@@ -325,7 +297,8 @@ export default function App() {
     travelEntries.reduce((acc, entry) => acc + (entry.distance * (TRANSPORT_RATES[entry.type] || 0)), 0),
   [travelEntries]);
 
-  const progressPercent = Math.min(100, weeklyTargetMinutes > 0 ? (weeklyWorkMin / weeklyTargetMinutes) * 100 : 100);
+  const targetMinutes = 36 * 60;
+  const progressPercent = Math.min(100, ((currentWeekWorkMin + liveMinutes) / targetMinutes) * 100);
 
   const startTimer = async () => {
     if (!user) return;
@@ -380,17 +353,13 @@ export default function App() {
     const form = e.currentTarget;
     const formData = new FormData(form);
     const entryId = crypto.randomUUID();
-    const isFreeDay = formData.get('isFreeDay') === 'on';
-    const freeDayType = formData.get('freeDayType') as string;
     
     const newEntry = {
       id: entryId,
       date: formData.get('date') as string,
-      startTime: isFreeDay ? '00:00' : formData.get('start') as string,
-      endTime: isFreeDay ? '00:00' : formData.get('end') as string,
+      startTime: formData.get('start') as string,
+      endTime: formData.get('end') as string,
       breakTime: 0,
-      isFreeDay,
-      freeDayType: isFreeDay ? freeDayType : undefined,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -399,7 +368,6 @@ export default function App() {
       const entryRef = doc(db, 'users', user.uid, 'workEntries', entryId);
       await setDoc(entryRef, newEntry);
       form.reset();
-      setIsFreeDayChecked(false);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/workEntries/${entryId}`);
     }
@@ -486,8 +454,6 @@ export default function App() {
     const m = Math.floor(totalMinutes % 60);
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
   };
-
-  const [isFreeDayChecked, setIsFreeDayChecked] = useState(false);
 
   if (loading) {
     return (
@@ -609,13 +575,13 @@ export default function App() {
           </div>
           <div className="flex gap-2 md:gap-4 w-full sm:w-auto">
                 <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
-              <span className="label-tiny">Weekdoel</span>
-              <span className="text-base md:text-lg mono-value block">{formatMonoTime(weeklyTargetMinutes)}</span>
+              <span className="label-tiny">Doel</span>
+              <span className="text-base md:text-lg mono-value block">36:00</span>
             </div>
             <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
-              <span className="label-tiny">Uren deze week</span>
+              <span className="label-tiny">Gewerkte uren</span>
               <span className={`text-base md:text-lg mono-value block ${progressPercent >= 100 ? 'text-green-600' : 'text-brand-primary'}`}>
-                {formatMonoTime(weeklyWorkMin)}
+                {formatMonoTime(currentWeekWorkMin + liveMinutes)}
               </span>
             </div>
           </div>
@@ -672,44 +638,18 @@ export default function App() {
                         <label className="label-tiny">Datum</label>
                         <input type="date" name="date" required className="input-field" defaultValue={new Date().toISOString().split('T')[0]} />
                       </div>
-                      <div className="flex items-center gap-2 py-2">
-                        <input 
-                          type="checkbox" 
-                          name="isFreeDay" 
-                          id="isFreeDay" 
-                          className="w-4 h-4 rounded text-brand-primary" 
-                          checked={isFreeDayChecked}
-                          onChange={(e) => setIsFreeDayChecked(e.target.checked)}
-                        />
-                        <label htmlFor="isFreeDay" className="text-xs font-bold text-slate-500 uppercase cursor-pointer">
-                          vrije dag
-                        </label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="label-tiny">Start</label>
+                          <input type="time" name="start" required className="input-field" defaultValue="09:00" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="label-tiny">Einde</label>
+                          <input type="time" name="end" required className="input-field" defaultValue="17:00" />
+                        </div>
                       </div>
-                      {isFreeDayChecked && (
-                        <div className="space-y-1 mb-4">
-                          <label className="label-tiny">Type Vrije Dag</label>
-                          <select name="freeDayType" className="input-field" required>
-                            <option value="Feestdag">Feestdag</option>
-                            <option value="Vakantie">Vakantie</option>
-                            <option value="Ziekte">Ziekte</option>
-                            <option value="Inhaaldag">Inhaaldag / Vrije dag</option>
-                          </select>
-                        </div>
-                      )}
-                      {!isFreeDayChecked && (
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-1">
-                            <label className="label-tiny">Start</label>
-                            <input type="time" name="start" required className="input-field" defaultValue="09:00" />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="label-tiny">Einde</label>
-                            <input type="time" name="end" required className="input-field" defaultValue="17:00" />
-                          </div>
-                        </div>
-                      )}
                       <button type="submit" className="mt-2 w-full btn-primary bg-slate-800 hover:bg-slate-900 border-none">
-                        {isFreeDayChecked ? 'Vrije dag registreren' : 'Handmatig Toevoegen'}
+                        Handmatig Toevoegen
                       </button>
                     </motion.form>
                   ) : (
@@ -897,24 +837,12 @@ export default function App() {
                                 <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'short' })}</span>
                               </div>
                               <div className="flex items-center gap-3">
-                                {entry.isFreeDay ? (
-                                  <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-3 py-1 rounded text-[10px] font-black uppercase tracking-wider border border-amber-200 dark:border-amber-800">
-                                    {entry.freeDayType || 'Vrije dag'}
-                                  </span>
-                                ) : (
-                                  <>
-                                    <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.startTime}</span>
-                                    <ChevronRight size={10} className="text-slate-300" />
-                                    <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.endTime}</span>
-                                  </>
-                                )}
+                                <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.startTime}</span>
+                                <ChevronRight size={10} className="text-slate-300" />
+                                <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.endTime}</span>
                               </div>
                               <div className="text-right">
-                                <span className="mono-value tabular-nums">
-                                  {entry.isFreeDay ? (
-                                    `- ${new Date(entry.date + 'T00:00:00').getDay() === 3 ? '4u' : '8u'}`
-                                  ) : formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}
-                                </span>
+                                <span className="mono-value tabular-nums">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
                               </div>
                               <div className="text-right">
                                 <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
@@ -931,37 +859,21 @@ export default function App() {
                         {workEntries.map(entry => (
                           <div key={entry.id} className="p-4 flex justify-between items-center bg-[var(--panel-bg)] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                             <div className="flex items-center gap-4">
-                              {entry.isFreeDay ? (
-                                <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-3 py-1 rounded text-[10px] font-black uppercase tracking-wider border border-amber-200 dark:border-amber-800">
-                                  {entry.freeDayType || 'Vrije dag'}
-                                </span>
-                              ) : (
-                                <div className="bg-slate-100 px-2 py-1 rounded text-center min-w-12">
-                                  <span className="block text-[10px] font-bold text-slate-400 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
-                                  <span className="text-sm font-bold text-slate-700">{new Date(entry.date).getDate()}</span>
-                                </div>
-                              )}
+                              <div className="bg-slate-100 px-2 py-1 rounded text-center min-w-12">
+                                <span className="block text-[10px] font-bold text-slate-400 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
+                                <span className="text-sm font-bold text-slate-700">{new Date(entry.date).getDate()}</span>
+                              </div>
                               <div>
-                                {entry.isFreeDay ? (
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</span>
-                                ) : (
-                                  <>
-                                    <div className="flex items-center gap-2 text-xs font-medium text-slate-600 mb-1">
-                                      <span>{entry.startTime}</span>
-                                      <ChevronRight size={10} className="text-slate-300" />
-                                      <span>{entry.endTime}</span>
-                                    </div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</span>
-                                  </>
-                                )}
+                                <div className="flex items-center gap-2 text-xs font-medium text-slate-600 mb-1">
+                                  <span>{entry.startTime}</span>
+                                  <ChevronRight size={10} className="text-slate-300" />
+                                  <span>{entry.endTime}</span>
+                                </div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</span>
                               </div>
                             </div>
                             <div className="flex items-center gap-4">
-                              <span className="mono-value text-sm text-right">
-                                {entry.isFreeDay ? (
-                                  `- ${new Date(entry.date + 'T00:00:00').getDay() === 3 ? '4u' : '8u'}`
-                                ) : formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}
-                              </span>
+                              <span className="mono-value text-sm">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
                               <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 hover:text-red-500 transition-all">
                                 <Trash2 size={16} />
                               </button>
