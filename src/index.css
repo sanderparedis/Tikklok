@@ -5,33 +5,54 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   
-  --color-brand-primary: #6366f1; /* Indigo 500 */
-  --color-brand-sidebar: #1E293B; /* Slate 900 */
-  --color-brand-bg: #F1F3F6;
+  --color-brand-primary: #00638A;
+  --color-brand-secondary: #99C221;
+  --color-brand-sidebar: var(--sidebar-bg);
+  --color-brand-bg: var(--app-bg);
+}
+
+:root {
+  --app-bg: #F1F5F9;
+  --sidebar-bg: #0F172A;
+  --panel-bg: #FFFFFF;
+  --panel-border: #E2E8F0;
+  --text-main: #0F172A;
+  --text-muted: #64748B;
+  --input-bg: #FFFFFF;
+}
+
+.dark {
+  --app-bg: #020617;
+  --sidebar-bg: #0F172A;
+  --panel-bg: #1E293B;
+  --panel-border: #334155;
+  --text-main: #F1F5F9;
+  --text-muted: #94A3B8;
+  --input-bg: #0F172A;
 }
 
 @layer base {
   body {
-    @apply bg-brand-bg text-slate-800 font-sans antialiased;
+    @apply bg-brand-bg text-[var(--text-main)] font-sans antialiased transition-colors duration-300;
   }
 }
 
 .card-panel {
-  @apply bg-white border border-slate-200 shadow-sm rounded-2xl;
+  @apply bg-[var(--panel-bg)] border border-[var(--panel-border)] shadow-sm rounded-2xl transition-colors;
 }
 
 .input-field {
-  @apply w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all;
+  @apply w-full px-4 py-2.5 bg-[var(--input-bg)] border border-[var(--panel-border)] rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all text-[var(--text-main)];
 }
 
 .btn-primary {
-  @apply bg-brand-primary text-white px-6 py-2 rounded-lg font-bold text-sm hover:bg-brand-primary/90 transition-colors shadow-lg shadow-brand-primary/20 disabled:opacity-50;
+  @apply bg-brand-primary text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-brand-primary/20 disabled:opacity-50;
 }
 
 .label-tiny {
-  @apply block text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-1;
+  @apply block text-[10px] uppercase font-bold text-[var(--text-muted)] tracking-widest mb-1.5;
 }
 
 .mono-value {
-  @apply font-mono font-bold text-slate-700;
+  @apply font-mono font-bold text-[var(--text-main)];
 }

@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { Clock, Car, ChevronRight, Trash2, MapPin, Briefcase, BarChart3, Download, LogIn, LogOut } from 'lucide-react';
+import { Clock, Car, ChevronRight, Trash2, MapPin, Briefcase, BarChart3, Download, LogIn, LogOut, Sun, Moon, GraduationCap, School } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { auth, db, signInWithGoogle, logout, OperationType, handleFirestoreError } from './lib/firebase';
@@ -88,6 +88,24 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('hours');
   const [workEntries, setWorkEntries] = useState<WorkEntry[]>([]);
   const [travelEntries, setTravelEntries] = useState<TravelEntry[]>([]);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') === 'dark' || 
+             (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    }
+    return false;
+  });
+
+  // Dark mode effect
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
 
   // Timer State
   const [timer, setTimer] = useState<TimerState>({
@@ -96,6 +114,7 @@ export default function App() {
   });
 
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [travelRouteType, setTravelRouteType] = useState<string>('0');
 
   // Auth listener
   useEffect(() => {
@@ -264,7 +283,7 @@ export default function App() {
     travelEntries.reduce((acc, entry) => acc + (entry.distance * (TRANSPORT_RATES[entry.type] || 0)), 0),
   [travelEntries]);
 
-  const targetMinutes = 30 * 60 + 35;
+  const targetMinutes = 36 * 60;
   const progressPercent = Math.min(100, (totalWorkMin / targetMinutes) * 100);
 
   const startTimer = async () => {
@@ -345,17 +364,32 @@ export default function App() {
     const formData = new FormData(e.currentTarget);
     const routeIndex = formData.get('route') as string;
     const isReturn = formData.get('return') === 'on';
+    const transportType = formData.get('type') as TransportType;
     
     let distance = 0;
     let description = "";
+    let finalType = transportType;
 
-    if (routeIndex !== "custom") {
+    if (routeIndex === "nascholing") {
+      const enkel = Number(formData.get('distance_manual'));
+      distance = enkel * 2;
+      description = `Nascholing (H&T)`;
+      finalType = 'auto'; // Only possible with car
+    } else if (routeIndex === "woonwerk_fiets") {
+      const enkel = Number(formData.get('distance_manual'));
+      distance = enkel * 2;
+      description = `Woon-werkverkeer Fiets (H&T)`;
+      finalType = 'fiets';
+    } else if (routeIndex === "custom") {
+      const dist = Number(formData.get('distance_manual'));
+      distance = dist * (isReturn ? 2 : 1);
+      description = `Aangepast traject ${isReturn ? '(H&T)' : ''}`;
+      finalType = transportType;
+    } else {
       const route = PRESET_ROUTES[Number(routeIndex)];
       distance = route.km * (isReturn ? 2 : 1);
       description = `${route.label} ${isReturn ? '(H&T)' : ''}`;
-    } else {
-      distance = Number(formData.get('distance'));
-      description = `Aangepast traject`;
+      finalType = transportType;
     }
 
     const entryId = crypto.randomUUID();
@@ -364,7 +398,7 @@ export default function App() {
       date: formData.get('date') as string,
       description,
       distance,
-      type: formData.get('type') as TransportType,
+      type: finalType,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -415,21 +449,31 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-brand-bg p-4">
+      <div className="min-h-screen flex items-center justify-center bg-brand-bg p-4 flex-col gap-6">
+        <button 
+          onClick={() => setIsDarkMode(!isDarkMode)}
+          className="fixed top-8 right-8 p-3 card-panel text-brand-primary"
+        >
+          {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
         <div className="w-full max-w-md">
           <div className="card-panel p-8 text-center flex flex-col gap-8">
             <div className="flex justify-center">
-              <div className="w-20 h-20 bg-brand-primary rounded-3xl flex items-center justify-center text-white font-bold text-4xl shadow-2xl shadow-brand-primary/40 rotate-3">
-                W
+              <div className="w-24 h-24 bg-white rounded-[2rem] flex items-center justify-center p-3 shadow-2xl shadow-brand-primary/20 rotate-3 border-2 border-brand-primary/10">
+                <img 
+                  src="/src/assets/images/regenerated_image_1777968353460.png" 
+                  alt="Mosa-RT Logo" 
+                  className="w-full h-full object-contain"
+                />
               </div>
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-slate-900 mb-2">Welkom bij Werktijd</h1>
-              <p className="text-slate-500 font-medium">Log in om je professionaliteit te professionaliseren.</p>
+              <h1 className="text-3xl font-black text-[var(--text-main)] mb-2 tracking-tight">Werktijd</h1>
+              <p className="text-[var(--text-muted)] font-medium">Mosa-RT • Professionaliteit & Talent</p>
             </div>
             <button 
               onClick={signInWithGoogle}
-              className="flex items-center justify-center gap-3 w-full py-4 px-6 bg-slate-900 text-white rounded-2xl font-bold text-lg hover:bg-slate-800 transition-all shadow-xl hover:shadow-slate-200"
+              className="btn-primary w-full py-5 flex items-center justify-center gap-3 text-lg"
             >
               <LogIn size={20} />
               Inloggen met Google
@@ -441,40 +485,63 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex bg-brand-bg text-slate-800 font-sans h-screen overflow-hidden">
+    <div className="min-h-screen flex bg-brand-bg text-[var(--text-main)] font-sans h-screen overflow-hidden">
       {/* Sidebar Nav */}
       <aside className="w-16 md:w-20 bg-brand-sidebar flex flex-col items-center py-6 md:py-8 gap-8 md:gap-10 shrink-0 z-50">
-        <div className="w-8 h-8 md:w-10 md:h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white font-bold text-lg md:text-xl shadow-lg shadow-brand-primary/20">W</div>
-        <nav className="flex flex-col gap-6 md:gap-8">
+        <div className="flex flex-col items-center gap-1 group">
+          <div className="w-12 h-12 md:w-14 md:h-14 bg-white rounded-xl flex items-center justify-center shadow-xl shadow-brand-primary/20 overflow-hidden border-2 border-brand-primary/10 p-1.5 active:scale-95 transition-transform">
+            <img 
+              src="/src/assets/images/regenerated_image_1777968353460.png" 
+              alt="Mosa-RT Logo" 
+              className="w-full h-full object-contain"
+            />
+          </div>
+          <span className="text-[10px] font-black tracking-tighter text-white/70 uppercase group-hover:text-white transition-colors">Mosa-RT</span>
+        </div>
+        
+        <nav className="flex flex-col gap-6 md:gap-8 flex-1">
           <button 
             id="nav-hours"
             onClick={() => setActiveTab('hours')}
-            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'hours' ? 'bg-brand-primary/20 text-brand-primary' : 'text-slate-400 hover:text-white'}`}
+            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'hours' ? 'bg-brand-primary/20 text-brand-primary scale-110' : 'text-slate-400 hover:text-white'}`}
+            title="Tijdregistratie"
           >
             <Clock size={20} className="md:w-6 md:h-6" />
           </button>
           <button 
             id="nav-travel"
             onClick={() => setActiveTab('travel')}
-            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'travel' ? 'bg-brand-primary/20 text-brand-primary' : 'text-slate-400 hover:text-white'}`}
+            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'travel' ? 'bg-brand-primary/20 text-brand-primary scale-110' : 'text-slate-400 hover:text-white'}`}
+            title="Verplaatsingen"
           >
             <Car size={20} className="md:w-6 md:h-6" />
           </button>
           <button 
             id="nav-reports"
             onClick={() => setActiveTab('reports')}
-            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'reports' ? 'bg-brand-primary/20 text-brand-primary' : 'text-slate-400 hover:text-white'}`}
+            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'reports' ? 'bg-brand-primary/20 text-brand-primary scale-110' : 'text-slate-400 hover:text-white'}`}
+            title="Rapporten"
           >
             <BarChart3 size={20} className="md:w-6 md:h-6" />
           </button>
+
+          <div className="mt-8 flex flex-col gap-4 border-t border-white/5 pt-8">
+             <button 
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="p-2.5 md:p-3 rounded-lg text-slate-400 hover:text-yellow-400 transition-all"
+              title={isDarkMode ? 'Lichte modus' : 'Donkere modus'}
+            >
+              {isDarkMode ? <Sun size={20} className="md:w-6 md:h-6" /> : <Moon size={20} className="md:w-6 md:h-6" />}
+            </button>
+          </div>
           
-          <div className="mt-auto flex flex-col gap-6">
+          <div className="mt-auto flex flex-col gap-6 items-center">
             <div className="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-brand-primary/20 overflow-hidden shadow-sm">
-              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} alt="avatar" className="w-full h-full object-cover" />
+              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=00638A&color=fff`} alt="avatar" className="w-full h-full object-cover" />
             </div>
             <button 
               onClick={logout}
-              className="p-2.5 md:p-3 rounded-lg text-slate-400 hover:text-red-400 transition-all"
+              className="p-2.5 md:p-3 rounded-lg text-slate-400 hover:text-red-400 transition-all mb-4"
               title="Uitloggen"
             >
               <LogOut size={20} className="md:w-6 md:h-6" />
@@ -488,17 +555,17 @@ export default function App() {
         {/* Header Section */}
         <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end shrink-0 gap-4">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-slate-900">
+            <h1 className="text-xl md:text-2xl font-bold text-[var(--text-main)]">
               {activeTab === 'hours' ? 'Tijdregistratie' : activeTab === 'travel' ? 'Verplaatsingen' : 'Maandoverzichten'}
             </h1>
-            <p className="text-slate-500 text-sm font-medium">Overzicht van je professionele activiteiten</p>
+            <p className="text-[var(--text-muted)] text-sm font-medium">Overzicht van je professionele activiteiten</p>
           </div>
           <div className="flex gap-2 md:gap-4 w-full sm:w-auto">
-            <div className="bg-white px-3 md:px-4 py-2 rounded-xl shadow-sm border border-slate-200 flex-1 sm:min-w-32">
+                <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
               <span className="label-tiny">Doel</span>
-              <span className="text-base md:text-lg mono-value block">30:35</span>
+              <span className="text-base md:text-lg mono-value block">36:00</span>
             </div>
-            <div className="bg-white px-3 md:px-4 py-2 rounded-xl shadow-sm border border-slate-200 flex-1 sm:min-w-32">
+            <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
               <span className="label-tiny">Gewerkte uren</span>
               <span className={`text-base md:text-lg mono-value block ${progressPercent >= 100 ? 'text-green-600' : 'text-brand-primary'}`}>
                 {formatMonoTime(totalWorkMin)}
@@ -514,26 +581,26 @@ export default function App() {
           {activeTab !== 'reports' && (
             <section className="lg:col-span-4 flex flex-col gap-6 overflow-visible lg:overflow-y-auto pr-0 lg:pr-2">
               {activeTab === 'hours' && (
-                <div className="card-panel p-6 flex flex-col shrink-0 bg-gradient-to-br from-white to-indigo-50/30">
+                <div className="card-panel p-6 flex flex-col shrink-0 bg-gradient-to-br from-[var(--panel-bg)] to-brand-primary/5">
                   <h3 className="label-tiny mb-4">Live Sessie</h3>
                   <div className="flex flex-col items-center justify-center py-6 gap-2">
-                    <div className="text-5xl font-mono font-light text-slate-800 tracking-tighter">
+                    <div className="text-5xl font-mono font-light text-[var(--text-main)] tracking-tighter">
                       {formatTimer(liveMinutes)}
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${timer.isActive ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`} />
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      <div className={`w-2 h-2 rounded-full ${timer.isActive ? 'bg-green-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                      <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
                         {timer.isActive ? 'Actief aan het werk' : 'Inactief'}
                       </span>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 mt-4">
                     {!timer.isActive ? (
-                      <button onClick={startTimer} className="col-span-2 btn-primary bg-indigo-600 py-4 shadow-xl border-none">
+                      <button onClick={startTimer} className="col-span-2 btn-primary py-4 shadow-xl border-none">
                         Start Nieuwe Sessie
                       </button>
                     ) : (
-                      <button onClick={stopTimer} className="col-span-2 bg-red-100 text-red-700 font-bold py-4 rounded-xl hover:bg-red-200 transition-colors">
+                      <button onClick={stopTimer} className="col-span-2 bg-red-500/10 text-red-500 font-bold py-4 rounded-xl hover:bg-red-500/20 transition-colors">
                         Stop Sessie
                       </button>
                     )}
@@ -586,21 +653,66 @@ export default function App() {
                         <input type="date" name="date" required className="input-field" defaultValue={new Date().toISOString().split('T')[0]} />
                       </div>
                       <div className="space-y-1">
-                        <label className="label-tiny">Selecteer Traject</label>
-                        <select name="route" className="input-field" defaultValue="0">
-                          {PRESET_ROUTES.map((route, i) => (
-                            <option key={i} value={i}>{route.label} ({route.km} km)</option>
-                          ))}
-                          <option value="custom">Aangepast traject...</option>
+                        <label className="label-tiny">Selecteer Traject / Type</label>
+                        <select 
+                          name="route" 
+                          className="input-field" 
+                          value={travelRouteType}
+                          onChange={(e) => setTravelRouteType(e.target.value)}
+                        >
+                          <optgroup label="Vaste Trajecten">
+                            {PRESET_ROUTES.map((route, i) => (
+                              <option key={i} value={i}>{route.label} ({route.km} km)</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Speciale Categorieën">
+                            <option value="nascholing">Nascholing (Auto, H&T)</option>
+                            <option value="woonwerk_fiets">Woon-werkverkeer (Fiets, H&T)</option>
+                          </optgroup>
+                          <option value="custom">Handmatig traject...</option>
                         </select>
                       </div>
-                      <div className="flex items-center gap-3 py-2">
-                         <input type="checkbox" name="return" id="is-return" className="w-4 h-4 rounded text-brand-primary" />
-                         <label htmlFor="is-return" className="text-xs font-bold text-slate-500 uppercase cursor-pointer">Heen en terug rit</label>
+
+                      {(travelRouteType === 'custom' || travelRouteType === 'nascholing' || travelRouteType === 'woonwerk_fiets') && (
+                        <div className="space-y-1">
+                          <label className="label-tiny">
+                            {travelRouteType === 'custom' ? 'Afstand (km)' : 'Enkel traject (km)'}
+                          </label>
+                          <input 
+                            type="number" 
+                            name="distance_manual" 
+                            step="0.1" 
+                            required 
+                            className="input-field" 
+                            placeholder="bijv. 12.5" 
+                          />
+                          {(travelRouteType === 'nascholing' || travelRouteType === 'woonwerk_fiets') && (
+                            <p className="text-[10px] text-brand-primary font-bold uppercase mt-1">Wordt automatisch verdubbeld (H&T)</p>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-3 py-1">
+                         <input 
+                           type="checkbox" 
+                           name="return" 
+                           id="is-return" 
+                           className="w-4 h-4 rounded text-brand-primary" 
+                           disabled={travelRouteType === 'nascholing' || travelRouteType === 'woonwerk_fiets'}
+                           defaultChecked={travelRouteType === 'nascholing' || travelRouteType === 'woonwerk_fiets'}
+                         />
+                         <label htmlFor="is-return" className={`text-xs font-bold text-slate-500 uppercase cursor-pointer ${ (travelRouteType === 'nascholing' || travelRouteType === 'woonwerk_fiets') ? 'opacity-50' : ''}`}>
+                           Heen en terug rit
+                         </label>
                       </div>
                       <div className="space-y-1">
                         <label className="label-tiny">Vervoer</label>
-                        <select name="type" className="input-field">
+                        <select 
+                          name="type" 
+                          className="input-field" 
+                          disabled={travelRouteType === 'nascholing' || travelRouteType === 'woonwerk_fiets'}
+                          value={travelRouteType === 'nascholing' ? 'auto' : travelRouteType === 'woonwerk_fiets' ? 'fiets' : undefined}
+                        >
                           <option value="auto">Auto (€0,4004/km)</option>
                           <option value="fiets">Fiets (€0,21/km)</option>
                         </select>
@@ -669,45 +781,42 @@ export default function App() {
                       exit={{ opacity: 0 }}
                     >
                       {/* Desktop Table */}
-                      <table className="hidden md:table w-full text-left border-collapse">
-                        <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm shadow-slate-100/50">
-                          <tr className="label-tiny text-slate-400">
-                            <th className="p-4 pl-6">Datum</th>
-                            <th className="p-4">Tijdstip</th>
-                            <th className="p-4 text-right pr-6">Totaal</th>
-                          </tr>
-                        </thead>
-                        <tbody className="text-sm divide-y divide-slate-100">
+                      <div className="hidden md:block w-full">
+                        <div className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700 sticky top-0 z-10 grid grid-cols-[100px_1fr_120px_60px] items-center px-6 py-3 label-tiny text-slate-400">
+                          <div>Datum</div>
+                          <div className="pl-2">Tijdstippen</div>
+                          <div className="text-right">Totaal</div>
+                          <div className="text-right"></div>
+                        </div>
+                        <div className="divide-y divide-slate-100 dark:divide-slate-800 text-[var(--text-main)]">
                           {workEntries.map(entry => (
-                            <tr key={entry.id} className="group hover:bg-slate-50 transition-colors">
-                              <td className="p-4 pl-6">
-                                <span className="font-semibold">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
-                                <span className="block text-[10px] text-slate-400 uppercase font-bold">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'short' })}</span>
-                              </td>
-                              <td className="p-4">
-                                <div className="flex items-center gap-2">
-                                  <span className="bg-slate-100 px-2 py-0.5 rounded text-xs font-medium text-slate-600">{entry.startTime}</span>
-                                  <ChevronRight size={10} className="text-slate-300" />
-                                  <span className="bg-slate-100 px-2 py-0.5 rounded text-xs font-medium text-slate-600">{entry.endTime}</span>
-                                </div>
-                              </td>
-                              <td className="p-4 text-right pr-6">
-                                <div className="flex items-center justify-end gap-4">
-                                  <span className="mono-value">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
-                                  <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
+                            <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors grid grid-cols-[100px_1fr_120px_60px] items-center px-6 py-4 text-sm">
+                              <div>
+                                <span className="font-semibold block">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
+                                <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'short' })}</span>
+                              </div>
+                              <div className="flex items-center gap-3 pl-2">
+                                <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.startTime}</span>
+                                <ChevronRight size={10} className="text-slate-300" />
+                                <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.endTime}</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="mono-value">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
+                              </div>
+                              <div className="text-right">
+                                <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
                           ))}
-                        </tbody>
-                      </table>
+                        </div>
+                      </div>
                       
                       {/* Mobile Cards */}
                       <div className="md:hidden divide-y divide-slate-100">
                         {workEntries.map(entry => (
-                          <div key={entry.id} className="p-4 flex justify-between items-center bg-white active:bg-slate-50 transition-colors">
+                          <div key={entry.id} className="p-4 flex justify-between items-center bg-[var(--panel-bg)] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                             <div className="flex items-center gap-4">
                               <div className="bg-slate-100 px-2 py-1 rounded text-center min-w-12">
                                 <span className="block text-[10px] font-bold text-slate-400 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
@@ -740,51 +849,46 @@ export default function App() {
                       exit={{ opacity: 0 }}
                     >
                       {/* Desktop Table */}
-                      <table className="hidden md:table w-full text-left border-collapse">
-                        <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm shadow-slate-100/50">
-                          <tr className="label-tiny text-slate-400">
-                            <th className="p-4 pl-6">Datum</th>
-                            <th className="p-4">Traject</th>
-                            <th className="p-4">Vervoer</th>
-                            <th className="p-4 text-right pr-6">KM / €</th>
-                          </tr>
-                        </thead>
-                        <tbody className="text-sm divide-y divide-slate-100">
+                      <div className="hidden md:block w-full">
+                        <div className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700 sticky top-0 z-10 grid grid-cols-[90px_1fr_120px_130px_60px] items-center px-6 py-3 label-tiny text-slate-400">
+                          <div>Datum</div>
+                          <div className="pl-4">Traject</div>
+                          <div>Vervoer</div>
+                          <div className="text-right">Afstand / Kosten</div>
+                          <div className="text-right"></div>
+                        </div>
+                        <div className="divide-y divide-slate-100 dark:divide-slate-800 text-[var(--text-main)]">
                           {travelEntries.map(entry => (
-                            <tr key={entry.id} className="group hover:bg-slate-50 transition-colors">
-                              <td className="p-4 pl-6">
-                                <span className="font-semibold">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
-                              </td>
-                              <td className="p-4">
-                                <div className="font-medium">{entry.description}</div>
-                              </td>
-                              <td className="p-4 uppercase text-[10px] font-bold">
-                                <span className={`px-2 py-1 rounded ${
-                                  entry.type === 'auto' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'
+                            <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors grid grid-cols-[90px_1fr_120px_130px_60px] items-center px-6 py-4 text-sm">
+                              <div className="font-semibold text-[var(--text-muted)]">
+                                {new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}
+                              </div>
+                              <div className="font-medium pr-4 truncate tracking-tight pl-4">{entry.description}</div>
+                              <div className="flex items-center">
+                                <span className={`px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-tight min-w-[60px] text-center ${
+                                  entry.type === 'auto' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : 'bg-green-500/10 text-green-500 border border-green-500/20'
                                 }`}>
                                   {entry.type}
                                 </span>
-                              </td>
-                              <td className="p-4 text-right pr-6">
-                                <div className="flex items-center justify-end gap-4">
-                                  <div className="text-right">
-                                    <div className="mono-value text-slate-900">{entry.distance.toFixed(1)} km</div>
-                                    <div className="text-[10px] text-green-600 font-bold">€{(entry.distance * TRANSPORT_RATES[entry.type]).toFixed(2)}</div>
-                                  </div>
-                                  <button onClick={() => deleteTravel(entry.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
+                              </div>
+                              <div className="text-right">
+                                <div className="mono-value tabular-nums">{entry.distance.toFixed(1)} km</div>
+                                <div className="text-[10px] text-green-600 font-bold tabular-nums">€{(entry.distance * TRANSPORT_RATES[entry.type]).toFixed(2)}</div>
+                              </div>
+                              <div className="text-right">
+                                <button onClick={() => deleteTravel(entry.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
                           ))}
-                        </tbody>
-                      </table>
+                        </div>
+                      </div>
 
                       {/* Mobile Cards */}
                       <div className="md:hidden divide-y divide-slate-100">
                         {travelEntries.map(entry => (
-                          <div key={entry.id} className="p-4 bg-white active:bg-slate-50 transition-colors">
+                          <div key={entry.id} className="p-4 bg-[var(--panel-bg)] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                             <div className="flex justify-between items-start mb-2">
                               <div className="flex items-center gap-3">
                                 <div className="bg-slate-100 px-2 py-1 rounded text-center min-w-12">
@@ -821,32 +925,32 @@ export default function App() {
                       className="p-4 md:p-6 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6"
                     >
                       {groupedMonthlyData.map(([key, stats]) => (
-                        <div key={key} className="bg-white border border-slate-200 rounded-2xl p-4 md:p-6 shadow-sm hover:border-brand-primary/30 transition-all group">
+                        <div key={key} className="card-panel p-4 md:p-6 hover:border-brand-primary/30 transition-all group">
                           <div className="flex justify-between items-start mb-6">
                             <div>
-                              <h4 className="text-base md:text-lg font-bold text-slate-900 capitalize">{key}</h4>
-                              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Maandrapport</p>
+                              <h4 className="text-base md:text-lg font-bold text-[var(--text-main)] capitalize">{key}</h4>
+                              <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Maandrapport</p>
                             </div>
                             <button 
                               onClick={() => exportToExcel(key)}
-                              className="flex items-center gap-2 px-3 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
+                              className="flex items-center gap-2 px-3 py-2 bg-brand-primary/10 text-brand-primary rounded-lg text-xs font-bold hover:bg-brand-primary hover:text-white transition-all shadow-sm"
                             >
                               <Download size={14} /> <span className="hidden sm:inline">Excel</span>
                             </button>
                           </div>
                           
                           <div className="grid grid-cols-2 gap-3 md:gap-4">
-                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center sm:text-left">
+                            <div className="bg-[var(--app-bg)] p-3 rounded-xl border border-[var(--panel-border)]">
                               <span className="label-tiny">Gewerkte Uren</span>
-                              <span className="block text-lg md:text-xl mono-value text-slate-900">{formatMonoTime(stats.workMin)}</span>
+                              <span className="block text-lg md:text-xl mono-value text-[var(--text-main)]">{formatMonoTime(stats.workMin)}</span>
                             </div>
-                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center sm:text-left">
+                            <div className="bg-[var(--app-bg)] p-3 rounded-xl border border-[var(--panel-border)]">
                               <span className="label-tiny">Reiskosten</span>
                               <span className="block text-lg md:text-xl mono-value text-green-600">€{stats.travelComp.toFixed(2)}</span>
                             </div>
-                            <div className="col-span-2 flex items-center justify-between px-2 pt-2 border-t border-slate-100">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase">Afstand</span>
-                              <span className="text-xs font-bold text-slate-500">{stats.travelKm.toFixed(1)} km</span>
+                            <div className="col-span-2 flex items-center justify-between px-3 py-2 bg-[var(--panel-bg)]/50 rounded-lg border border-[var(--panel-border)]">
+                              <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Afstand</span>
+                              <span className="text-xs font-bold text-[var(--text-main)] mono-value">{stats.travelKm.toFixed(1)} km</span>
                             </div>
                           </div>
                         </div>

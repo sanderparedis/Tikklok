@@ -17,7 +17,7 @@
     },
     "TravelEntry": {
       "title": "Travel Entry",
-      "description": "A record of professional travel.",
+      "description": "A record of professional travel (Preset, Nascholing, or Woon-werk).",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
