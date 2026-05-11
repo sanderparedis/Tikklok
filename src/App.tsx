@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { Clock, Car, ChevronRight, Trash2, MapPin, Briefcase, BarChart3, Download, LogIn, LogOut, Sun, Moon, GraduationCap, School } from 'lucide-react';
+import { Clock, Car, ChevronRight, Trash2, MapPin, Briefcase, BarChart3, Download, LogIn, LogOut, Sun, Moon, GraduationCap, School, Pencil, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { auth, db, signInWithGoogle, logout, OperationType, handleFirestoreError } from './lib/firebase';
@@ -121,6 +121,9 @@ export default function App() {
     isActive: false,
     startTime: null
   });
+
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<{ startTime: string; endTime: string } | null>(null);
 
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [travelRouteType, setTravelRouteType] = useState<string>('preset');
@@ -603,6 +606,30 @@ export default function App() {
     }
   };
 
+  const updateWorkEntry = async (id: string) => {
+    if (!user || !editValues) return;
+    try {
+      const entryRef = doc(db, 'users', user.uid, 'workEntries', id);
+      await updateDoc(entryRef, {
+        startTime: editValues.startTime,
+        endTime: editValues.endTime,
+        updatedAt: serverTimestamp(),
+      });
+      setEditingEntryId(null);
+      setEditValues(null);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${user.uid}/workEntries/${id}`);
+    }
+  };
+
+  const startEditing = (entry: WorkEntry) => {
+    setEditingEntryId(entry.id);
+    setEditValues({
+      startTime: entry.startTime,
+      endTime: entry.endTime
+    });
+  };
+
   const deleteTravel = async (id: string) => {
     if (!user) return;
     try {
@@ -1066,23 +1093,65 @@ export default function App() {
                             }
 
                             return (
-                              <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/10 transition-colors grid grid-cols-[100px_1fr_140px_60px] gap-6 items-center px-6 py-4 text-sm border-b dark:border-slate-800/30">
+                              <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/10 transition-colors grid grid-cols-[100px_1fr_140px_80px] gap-6 items-center px-6 py-4 text-sm border-b dark:border-slate-800/30">
                                 <div>
                                   <span className="font-semibold block whitespace-nowrap">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
                                   <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'short' })}</span>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                  <span className="bg-slate-50 dark:bg-slate-900/40 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-800/80">{entry.startTime}</span>
-                                  <ChevronRight size={10} className="text-slate-300 dark:text-slate-600" />
-                                  <span className="bg-slate-50 dark:bg-slate-900/40 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-800/80">{entry.endTime}</span>
+                                  {editingEntryId === entry.id ? (
+                                    <div className="flex items-center gap-2">
+                                      <input 
+                                        type="time" 
+                                        className="input-field py-1 px-2 text-xs h-auto min-w-[70px]"
+                                        value={editValues?.startTime}
+                                        onChange={(e) => setEditValues(prev => prev ? { ...prev, startTime: e.target.value } : null)}
+                                      />
+                                      <ChevronRight size={10} className="text-slate-300 dark:text-slate-600" />
+                                      <input 
+                                        type="time" 
+                                        className="input-field py-1 px-2 text-xs h-auto min-w-[70px]"
+                                        value={editValues?.endTime}
+                                        onChange={(e) => setEditValues(prev => prev ? { ...prev, endTime: e.target.value } : null)}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <span className="bg-slate-50 dark:bg-slate-900/40 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-800/80">{entry.startTime}</span>
+                                      <ChevronRight size={10} className="text-slate-300 dark:text-slate-600" />
+                                      <span className="bg-slate-50 dark:bg-slate-900/40 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-800/80">{entry.endTime}</span>
+                                    </>
+                                  )}
                                 </div>
                                 <div className="text-right">
-                                  <span className="mono-value tabular-nums">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
+                                  <span className="mono-value tabular-nums">
+                                    {formatMonoTime(
+                                      editingEntryId === entry.id && editValues 
+                                        ? calculateDuration(editValues.startTime, editValues.endTime, entry.breakTime)
+                                        : calculateDuration(entry.startTime, entry.endTime, entry.breakTime)
+                                    )}
+                                  </span>
                                 </div>
-                                <div className="text-right">
-                                  <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
-                                    <Trash2 size={14} />
-                                  </button>
+                                <div className="text-right flex items-center justify-end gap-1">
+                                  {editingEntryId === entry.id ? (
+                                    <>
+                                      <button onClick={() => updateWorkEntry(entry.id)} className="p-2 text-green-500 hover:bg-green-50 rounded-lg transition-all" title="Opslaan">
+                                        <Check size={14} />
+                                      </button>
+                                      <button onClick={() => { setEditingEntryId(null); setEditValues(null); }} className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-all" title="Annuleren">
+                                        <X size={14} />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button onClick={() => startEditing(entry)} className="p-2 text-slate-300 hover:text-brand-primary opacity-0 group-hover:opacity-100 transition-all" title="Bewerken">
+                                        <Pencil size={14} />
+                                      </button>
+                                      <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all" title="Verwijderen">
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -1123,26 +1192,71 @@ export default function App() {
                           }
 
                           return (
-                            <div key={entry.id} className="p-4 flex justify-between items-center bg-[var(--panel-bg)] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-b dark:border-slate-800/30">
-                              <div className="flex items-center gap-4">
-                                <div className="bg-slate-100 dark:bg-slate-800/50 px-2 py-1 rounded text-center min-w-12">
-                                  <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
-                                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{new Date(entry.date).getDate()}</span>
-                                </div>
-                                <div>
-                                  <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                                    <span>{entry.startTime}</span>
-                                    <ChevronRight size={10} className="text-slate-300 dark:text-slate-600" />
-                                    <span>{entry.endTime}</span>
+                            <div key={entry.id} className="p-4 bg-[var(--panel-bg)] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-b dark:border-slate-800/30">
+                              <div className="flex justify-between items-start mb-4">
+                                <div className="flex items-center gap-4">
+                                  <div className="bg-slate-100 dark:bg-slate-800/50 px-2 py-1 rounded text-center min-w-12">
+                                    <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
+                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{new Date(entry.date).getDate()}</span>
                                   </div>
-                                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</span>
+                                  <div>
+                                    {editingEntryId === entry.id ? (
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <input 
+                                          type="time" 
+                                          className="input-field py-1 px-2 text-[10px] h-auto min-w-[60px]"
+                                          value={editValues?.startTime}
+                                          onChange={(e) => setEditValues(prev => prev ? { ...prev, startTime: e.target.value } : null)}
+                                        />
+                                        <ChevronRight size={10} className="text-slate-300 dark:text-slate-600" />
+                                        <input 
+                                          type="time" 
+                                          className="input-field py-1 px-2 text-[10px] h-auto min-w-[60px]"
+                                          value={editValues?.endTime}
+                                          onChange={(e) => setEditValues(prev => prev ? { ...prev, endTime: e.target.value } : null)}
+                                        />
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                        <span>{entry.startTime}</span>
+                                        <ChevronRight size={10} className="text-slate-300 dark:text-slate-600" />
+                                        <span>{entry.endTime}</span>
+                                      </div>
+                                    )}
+                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {editingEntryId === entry.id ? (
+                                    <>
+                                      <button onClick={() => updateWorkEntry(entry.id)} className="p-2 text-green-500 bg-green-50 dark:bg-green-500/10 rounded-lg" title="Opslaan">
+                                        <Check size={16} />
+                                      </button>
+                                      <button onClick={() => { setEditingEntryId(null); setEditValues(null); }} className="p-2 text-red-400 bg-red-50 dark:bg-red-500/10 rounded-lg" title="Annuleren">
+                                        <X size={16} />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button onClick={() => startEditing(entry)} className="p-2 text-slate-300 dark:text-slate-600 hover:text-brand-primary" title="Bewerken">
+                                        <Pencil size={16} />
+                                      </button>
+                                      <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 dark:text-slate-600 hover:text-red-500 transition-all" title="Verwijderen">
+                                        <Trash2 size={16} />
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-4">
-                                <span className="mono-value text-sm text-[var(--text-main)]">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
-                                <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 dark:text-slate-600 hover:text-red-500 transition-all">
-                                  <Trash2 size={16} />
-                                </button>
+                              <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                <span>Duur</span>
+                                <span className="mono-value text-xs text-[var(--text-main)] lowercase font-bold">
+                                  {formatMonoTime(
+                                    editingEntryId === entry.id && editValues 
+                                      ? calculateDuration(editValues.startTime, editValues.endTime, entry.breakTime)
+                                      : calculateDuration(entry.startTime, entry.endTime, entry.breakTime)
+                                  )}
+                                </span>
                               </div>
                             </div>
                           );
