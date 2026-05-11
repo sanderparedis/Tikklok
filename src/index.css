@@ -5,30 +5,34 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   
-  --color-brand-primary: #00638A;
-  --color-brand-secondary: #99C221;
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-secondary: var(--brand-secondary);
   --color-brand-sidebar: var(--sidebar-bg);
   --color-brand-bg: var(--app-bg);
 }
 
 :root {
-  --app-bg: #F1F5F9;
-  --sidebar-bg: #0F172A;
-  --panel-bg: #FFFFFF;
+  --app-bg: #F1F5F7;
+  --sidebar-bg: #1E293B;
+  --panel-bg: #F9FBFC;
   --panel-border: #E2E8F0;
-  --text-main: #0F172A;
+  --text-main: #1E293B;
   --text-muted: #64748B;
   --input-bg: #FFFFFF;
+  --brand-primary: #00638A;
+  --brand-secondary: #99C221;
 }
 
 .dark {
-  --app-bg: #020617;
-  --sidebar-bg: #0F172A;
-  --panel-bg: #1E293B;
-  --panel-border: #334155;
-  --text-main: #F1F5F9;
-  --text-muted: #94A3B8;
+  --app-bg: #0B0E14;
+  --sidebar-bg: #151921;
+  --panel-bg: #1C212B;
+  --panel-border: #2D3544;
+  --text-main: #CBD5E1;
+  --text-muted: #64748B;
   --input-bg: #0F172A;
+  --brand-primary: #1F5F7A;
+  --brand-secondary: #748A3A;
 }
 
 @layer base {
@@ -38,15 +42,15 @@
 }
 
 .card-panel {
-  @apply bg-[var(--panel-bg)] border border-[var(--panel-border)] shadow-sm rounded-2xl transition-colors;
+  @apply bg-[var(--panel-bg)] border border-[var(--panel-border)] shadow-sm dark:shadow-none rounded-2xl transition-all duration-300;
 }
 
 .input-field {
-  @apply w-full px-4 py-2.5 bg-[var(--input-bg)] border border-[var(--panel-border)] rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all text-[var(--text-main)];
+  @apply w-full px-4 py-2.5 bg-[var(--input-bg)] border border-[var(--panel-border)] dark:border-[var(--panel-border)] rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all text-[var(--text-main)] placeholder:text-slate-400;
 }
 
 .btn-primary {
-  @apply bg-brand-primary text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-brand-primary/20 disabled:opacity-50;
+  @apply bg-brand-primary text-slate-50 px-6 py-2.5 rounded-xl font-bold text-sm hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-brand-primary/20 disabled:opacity-50;
 }
 
 .label-tiny {

@@ -643,15 +643,15 @@ export default function App() {
       <div className="min-h-screen flex items-center justify-center bg-brand-bg p-4 flex-col gap-6">
         <button 
           onClick={() => setIsDarkMode(!isDarkMode)}
-          className="fixed top-8 right-8 p-3 card-panel text-brand-primary"
+          className="fixed top-8 right-8 p-3 card-panel text-brand-primary hover:text-brand-primary active:scale-95 transition-all"
         >
           {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
         </button>
         <div className="w-full max-w-md">
-          <div className="card-panel p-8 text-center flex flex-col gap-8">
+          <div className="card-panel p-8 text-center flex flex-col gap-8 shadow-2xl shadow-brand-primary/10">
             <div className="flex justify-center">
-              <div className="w-24 h-24 bg-gradient-to-tr from-brand-primary to-brand-secondary rounded-[2rem] flex items-center justify-center text-white shadow-2xl shadow-brand-primary/20 rotate-3">
-                <School size={48} />
+              <div className="w-24 h-24 bg-gradient-to-tr from-brand-primary to-brand-secondary rounded-[2rem] flex items-center justify-center text-slate-100 shadow-2xl shadow-brand-primary/20 rotate-3 group">
+                <School size={48} className="group-hover:scale-110 transition-transform" />
               </div>
             </div>
             <div>
@@ -660,9 +660,9 @@ export default function App() {
             </div>
             <button 
               onClick={signInWithGoogle}
-              className="btn-primary w-full py-5 flex items-center justify-center gap-3 text-lg"
+              className="btn-primary w-full py-5 flex items-center justify-center gap-3 text-lg group border-none shadow-xl"
             >
-              <LogIn size={20} />
+              <LogIn size={20} className="group-hover:translate-x-1 transition-transform" />
               Inloggen met Google
             </button>
           </div>
@@ -676,19 +676,19 @@ export default function App() {
       {/* Sidebar Nav */}
       <aside className="w-16 md:w-20 bg-brand-sidebar flex flex-col items-center py-6 md:py-8 gap-8 md:gap-10 shrink-0 z-50">
         <div className="flex flex-col items-center gap-1 group">
-          <div className="w-10 h-10 md:w-12 md:h-12 bg-[var(--panel-bg)] rounded-xl flex items-center justify-center text-brand-primary font-bold text-xl md:text-2xl shadow-xl shadow-brand-primary/10 overflow-hidden border-2 border-brand-primary/20">
+          <div className="w-10 h-10 md:w-12 md:h-12 bg-[var(--panel-bg)] rounded-xl flex items-center justify-center text-brand-primary font-bold text-xl md:text-2xl shadow-xl shadow-brand-primary/10 overflow-hidden border-2 border-brand-primary/20 transition-colors">
             <div className="relative w-full h-full flex items-center justify-center bg-gradient-to-tr from-brand-primary to-brand-secondary/80">
-              <School className="text-white w-6 h-6 md:w-7 md:h-7" />
+              <School className="text-slate-100 w-6 h-6 md:w-7 md:h-7" />
             </div>
           </div>
-          <span className="text-[8px] font-black tracking-tighter text-white/40 uppercase group-hover:text-white/80 transition-colors">Mosa-RT</span>
+          <span className="text-[8px] font-black tracking-tighter text-slate-100/40 uppercase group-hover:text-slate-100/80 transition-colors">Mosa-RT</span>
         </div>
         
         <nav className="flex flex-col gap-6 md:gap-8 flex-1">
           <button 
             id="nav-hours"
             onClick={() => setActiveTab('hours')}
-            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'hours' ? 'bg-brand-primary/20 text-brand-primary scale-110' : 'text-slate-400 hover:text-white'}`}
+            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'hours' ? 'bg-brand-primary/20 text-brand-primary scale-110 shadow-[0_0_15px_rgba(31,95,122,0.1)]' : 'text-slate-500 hover:text-slate-200'}`}
             title="Tijdregistratie"
           >
             <Clock size={20} className="md:w-6 md:h-6" />
@@ -696,7 +696,7 @@ export default function App() {
           <button 
             id="nav-travel"
             onClick={() => setActiveTab('travel')}
-            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'travel' ? 'bg-brand-primary/20 text-brand-primary scale-110' : 'text-slate-400 hover:text-white'}`}
+            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'travel' ? 'bg-brand-primary/20 text-brand-primary scale-110 shadow-[0_0_15px_rgba(31,95,122,0.1)]' : 'text-slate-500 hover:text-slate-200'}`}
             title="Verplaatsingen"
           >
             <Car size={20} className="md:w-6 md:h-6" />
@@ -704,7 +704,7 @@ export default function App() {
           <button 
             id="nav-reports"
             onClick={() => setActiveTab('reports')}
-            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'reports' ? 'bg-brand-primary/20 text-brand-primary scale-110' : 'text-slate-400 hover:text-white'}`}
+            className={`p-2.5 md:p-3 rounded-lg transition-all ${activeTab === 'reports' ? 'bg-brand-primary/20 text-brand-primary scale-110 shadow-[0_0_15px_rgba(31,95,122,0.1)]' : 'text-slate-500 hover:text-slate-200'}`}
             title="Rapporten"
           >
             <BarChart3 size={20} className="md:w-6 md:h-6" />
@@ -746,17 +746,17 @@ export default function App() {
             <p className="text-[var(--text-muted)] text-sm font-medium">Overzicht van je professionele activiteiten</p>
           </div>
           <div className="flex gap-2 md:gap-4 w-full sm:w-auto">
-                <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
+                <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-800 flex-1 sm:min-w-32">
               <span className="label-tiny">Doel</span>
               <span className="text-base md:text-lg mono-value block text-[var(--text-main)]">{formatMonoTime(currentTargetMinutes)}</span>
             </div>
-            <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
+            <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-800 flex-1 sm:min-w-32">
               <span className="label-tiny">Gewerkte uren</span>
               <span className={`text-base md:text-lg mono-value block ${progressPercent >= 100 ? 'text-green-600 dark:text-green-400' : 'text-brand-primary'}`}>
                 {formatMonoTime(currentWeekWorkMin + liveMinutes)}
               </span>
             </div>
-            <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
+            <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-800 flex-1 sm:min-w-32">
               <span className="label-tiny">Overuren</span>
               <span className={`text-base md:text-lg mono-value block ${
                 overtimeBalance > 20 * 60 ? 'text-purple-600 dark:text-purple-400' : 
@@ -767,13 +767,13 @@ export default function App() {
                 {overtimeBalance > 0 ? '+' : ''}{formatMonoTime(Math.abs(overtimeBalance))}
               </span>
             </div>
-            <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
+            <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-800 flex-1 sm:min-w-32">
               <span className="label-tiny">KM Totaal</span>
               <span className="text-base md:text-lg mono-value block text-slate-900 dark:text-slate-100">{totalKmForMonth.toFixed(1)} km</span>
             </div>
-            <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-700 flex-1 sm:min-w-32">
+            <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-800 flex-1 sm:min-w-32">
               <span className="label-tiny">Vergoeding</span>
-              <span className="text-base md:text-lg mono-value block text-green-600">€{totalCompForMonth.toFixed(2)}</span>
+              <span className="text-base md:text-lg mono-value block text-green-600 dark:text-green-400">€{totalCompForMonth.toFixed(2)}</span>
             </div>
           </div>
         </header>
@@ -793,11 +793,11 @@ export default function App() {
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Weekdoel</span>
                         <span className="text-[10px] font-bold text-brand-primary uppercase tabular-nums">{progressPercent.toFixed(1)}%</span>
                       </div>
-                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                      <div className="w-full bg-slate-100 dark:bg-slate-900/50 h-2 rounded-full overflow-hidden">
                         <motion.div 
                           initial={{ width: 0 }}
                           animate={{ width: `${progressPercent}%` }}
-                          className="h-full bg-brand-primary"
+                          className="h-full bg-brand-primary shadow-[0_0_12px_rgba(31,95,122,0.3)] dark:shadow-[0_0_12px_rgba(31,95,122,0.15)]"
                         />
                       </div>
                     </div>
@@ -809,11 +809,11 @@ export default function App() {
                 <div className="card-panel p-6 flex flex-col shrink-0 bg-gradient-to-br from-[var(--panel-bg)] to-indigo-500/5">
                   <h3 className="label-tiny mb-4">Live Sessie</h3>
                   <div className="flex flex-col items-center justify-center py-6 gap-2">
-                    <div className="text-5xl font-mono font-light text-[var(--text-main)] tracking-tighter">
+                    <div className="text-5xl font-mono font-light text-[var(--text-main)] tracking-tighter drop-shadow-sm">
                       {formatTimer(liveMinutes)}
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${timer.isActive ? 'bg-green-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                      <div className={`w-2 h-2 rounded-full ${timer.isActive ? 'bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-slate-300 dark:bg-slate-700'}`} />
                       <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
                         {timer.isActive ? 'Actief aan het werk' : 'Inactief'}
                       </span>
@@ -860,7 +860,7 @@ export default function App() {
                           <input type="time" name="end" required className="input-field" defaultValue="17:00" />
                         </div>
                       </div>
-                      <button type="submit" className="mt-2 w-full btn-primary bg-slate-800 hover:bg-slate-900 border-none">
+                      <button type="submit" className="mt-2 w-full btn-primary bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 dark:hover:bg-slate-600 border-none">
                         Handmatig Toevoegen
                       </button>
                     </motion.form>
@@ -924,8 +924,8 @@ export default function App() {
                       )}
 
                       {travelRouteType === 'preset' && (
-                        <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Afstand</p>
+                        <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800/50">
+                          <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Afstand</p>
                           <p className="text-sm font-mono font-bold text-brand-primary">
                             {ROUTE_DISTANCES[startLocation]?.[endLocation] || 0} km
                           </p>
@@ -976,7 +976,7 @@ export default function App() {
                           <option value="fiets">Fiets (€0,21/km)</option>
                         </select>
                       </div>
-                      <button type="submit" className="mt-4 w-full btn-primary bg-slate-800 hover:bg-slate-900 border-none">
+                      <button type="submit" className="mt-4 w-full btn-primary bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 dark:hover:bg-slate-600 border-none">
                         Toevoegen
                       </button>
                     </motion.form>
@@ -1012,13 +1012,12 @@ export default function App() {
           {/* List Section (Right/Bottom) */}
           <section className={`${activeTab === 'reports' ? 'lg:col-span-12' : 'lg:col-span-8'} flex flex-col gap-6 min-h-0`}>
 
-            {/* List Table */}
             <div className="card-panel flex-1 flex flex-col min-h-0 overflow-hidden">
-              <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
-                <h3 className="label-tiny !mb-0">
+              <div className="p-4 border-b border-slate-200 dark:border-slate-800/50 bg-brand-primary flex justify-between items-center shrink-0 transition-all">
+                <h3 className="label-tiny !mb-0 text-white">
                   {activeTab === 'hours' ? 'Geregistreerde Uren' : activeTab === 'travel' ? 'Verplaatsing Historiek' : 'Overzicht per Maand'}
                 </h3>
-                <span className="text-[10px] font-bold text-slate-400 uppercase">
+                <span className="text-[10px] font-bold text-white/90 uppercase">
                   {activeTab === 'hours' ? `${combinedEntries.length} items` : activeTab === 'travel' ? `${travelEntries.length} items` : `${groupedMonthlyData.length} maanden`}
                 </span>
               </div>
@@ -1044,10 +1043,10 @@ export default function App() {
                                     <span className="text-[10px] text-indigo-400 uppercase font-bold">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'short' })}</span>
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border ${
-                                      entry.type === 'ziek' ? 'bg-red-50 text-red-500 border-red-100' : 
-                                      entry.type === 'feestdag' ? 'bg-amber-50 text-amber-500 border-amber-100' : 
-                                      'bg-indigo-50 text-indigo-500 border-indigo-100'
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border transition-colors ${
+                                      entry.type === 'ziek' ? 'bg-red-50 text-red-500 border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20' : 
+                                      entry.type === 'feestdag' ? 'bg-amber-50 text-amber-500 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20' : 
+                                      'bg-indigo-50 text-indigo-500 border-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20'
                                     }`}>
                                       {entry.type}
                                     </span>
@@ -1067,15 +1066,15 @@ export default function App() {
                             }
 
                             return (
-                              <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors grid grid-cols-[100px_1fr_140px_60px] gap-6 items-center px-6 py-4 text-sm">
+                              <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/10 transition-colors grid grid-cols-[100px_1fr_140px_60px] gap-6 items-center px-6 py-4 text-sm border-b dark:border-slate-800/30">
                                 <div>
                                   <span className="font-semibold block whitespace-nowrap">{new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}</span>
                                   <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'short' })}</span>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                  <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.startTime}</span>
-                                  <ChevronRight size={10} className="text-slate-300" />
-                                  <span className="bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-700">{entry.endTime}</span>
+                                  <span className="bg-slate-50 dark:bg-slate-900/40 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-800/80">{entry.startTime}</span>
+                                  <ChevronRight size={10} className="text-slate-300 dark:text-slate-600" />
+                                  <span className="bg-slate-50 dark:bg-slate-900/40 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-800/80">{entry.endTime}</span>
                                 </div>
                                 <div className="text-right">
                                   <span className="mono-value tabular-nums">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
@@ -1096,9 +1095,9 @@ export default function App() {
                         {combinedEntries.map(entry => {
                           if (entry.entryType === 'free') {
                             return (
-                              <div key={entry.id} className="p-4 flex justify-between items-center bg-indigo-50/20 dark:bg-indigo-900/10 border-b border-indigo-100 dark:border-indigo-900/30">
+                              <div key={entry.id} className="p-4 flex justify-between items-center bg-indigo-50/20 dark:bg-indigo-900/10 border-b border-indigo-100/50 dark:border-indigo-900/30">
                                 <div className="flex items-center gap-4">
-                                  <div className="bg-indigo-100 dark:bg-indigo-900/50 px-2 py-1 rounded text-center min-w-12 border border-indigo-200 dark:border-indigo-800">
+                                  <div className="bg-indigo-100 dark:bg-indigo-900/40 px-2 py-1 rounded text-center min-w-12 border border-indigo-200/50 dark:border-indigo-800/50">
                                     <span className="block text-[10px] font-bold text-indigo-400 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
                                     <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300">{new Date(entry.date).getDate()}</span>
                                   </div>
@@ -1110,12 +1109,12 @@ export default function App() {
                                     }`}>
                                       {entry.type}
                                     </span>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</p>
+                                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</p>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-4">
                                   <span className="text-xs font-bold text-indigo-400">-{new Date(entry.date + 'T00:00:00').getDay() === 3 ? '4u' : '8u'}</span>
-                                  <button onClick={() => deleteFreeDay(entry.id)} className="p-2 text-slate-300 hover:text-red-500 transition-all">
+                                  <button onClick={() => deleteFreeDay(entry.id)} className="p-2 text-slate-300 dark:text-slate-600 hover:text-red-500 transition-all">
                                     <Trash2 size={16} />
                                   </button>
                                 </div>
@@ -1124,24 +1123,24 @@ export default function App() {
                           }
 
                           return (
-                            <div key={entry.id} className="p-4 flex justify-between items-center bg-[var(--panel-bg)] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                            <div key={entry.id} className="p-4 flex justify-between items-center bg-[var(--panel-bg)] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-b dark:border-slate-800/30">
                               <div className="flex items-center gap-4">
-                                <div className="bg-slate-100 px-2 py-1 rounded text-center min-w-12">
-                                  <span className="block text-[10px] font-bold text-slate-400 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
-                                  <span className="text-sm font-bold text-slate-700">{new Date(entry.date).getDate()}</span>
+                                <div className="bg-slate-100 dark:bg-slate-800/50 px-2 py-1 rounded text-center min-w-12">
+                                  <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
+                                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{new Date(entry.date).getDate()}</span>
                                 </div>
                                 <div>
-                                  <div className="flex items-center gap-2 text-xs font-medium text-slate-600 mb-1">
+                                  <div className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                                     <span>{entry.startTime}</span>
-                                    <ChevronRight size={10} className="text-slate-300" />
+                                    <ChevronRight size={10} className="text-slate-300 dark:text-slate-600" />
                                     <span>{entry.endTime}</span>
                                   </div>
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</span>
+                                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</span>
                                 </div>
                               </div>
                               <div className="flex items-center gap-4">
-                                <span className="mono-value text-sm">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
-                                <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 hover:text-red-500 transition-all">
+                                <span className="mono-value text-sm text-[var(--text-main)]">{formatMonoTime(calculateDuration(entry.startTime, entry.endTime, entry.breakTime))}</span>
+                                <button onClick={() => deleteWork(entry.id)} className="p-2 text-slate-300 dark:text-slate-600 hover:text-red-500 transition-all">
                                   <Trash2 size={16} />
                                 </button>
                               </div>
@@ -1161,21 +1160,21 @@ export default function App() {
                       <div className="hidden md:block w-full">
                         <div className="divide-y divide-slate-100 dark:divide-slate-800 text-[var(--text-main)]">
                           {travelEntries.map(entry => (
-                            <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors grid grid-cols-[90px_1fr_100px_130px_60px] gap-6 items-center px-6 py-4 text-sm">
+                            <div key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/10 transition-colors grid grid-cols-[90px_1fr_100px_130px_60px] gap-6 items-center px-6 py-4 text-sm border-b dark:border-slate-800/30 last:border-0">
                               <div className="font-semibold text-[var(--text-muted)]">
                                 {new Date(entry.date).toLocaleDateString('nl', { day: '2-digit', month: 'short' })}
                               </div>
-                              <div className="font-medium truncate tracking-tight">{entry.description}</div>
+                              <div className="font-medium truncate tracking-tight text-[var(--text-main)]">{entry.description}</div>
                               <div className="flex items-center">
-                                <span className={`px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-tight min-w-[60px] text-center ${
-                                  entry.type === 'auto' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : 'bg-green-500/10 text-green-500 border border-green-500/20'
+                                <span className={`px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-tight min-w-[60px] text-center border ${
+                                  entry.type === 'auto' ? 'bg-blue-500/5 text-blue-500 border-blue-500/20' : 'bg-green-500/5 text-green-500 border-green-500/20'
                                 }`}>
                                   {entry.type}
                                 </span>
                               </div>
                               <div className="text-right">
-                                <div className="mono-value tabular-nums">{entry.distance.toFixed(1)} km</div>
-                                <div className="text-[10px] text-green-600 font-bold tabular-nums">€{(entry.distance * TRANSPORT_RATES[entry.type]).toFixed(2)}</div>
+                                <div className="mono-value tabular-nums text-[var(--text-main)]">{entry.distance.toFixed(1)} km</div>
+                                <div className="text-[10px] text-green-600 dark:text-green-400 font-bold tabular-nums">€{(entry.distance * TRANSPORT_RATES[entry.type]).toFixed(2)}</div>
                               </div>
                               <div className="text-right">
                                 <button onClick={() => deleteTravel(entry.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
@@ -1190,28 +1189,28 @@ export default function App() {
                       {/* Mobile Cards */}
                       <div className="md:hidden divide-y divide-slate-100">
                         {travelEntries.map(entry => (
-                          <div key={entry.id} className="p-4 bg-[var(--panel-bg)] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <div key={entry.id} className="p-4 bg-[var(--panel-bg)] hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-b dark:border-slate-800/30">
                             <div className="flex justify-between items-start mb-2">
                               <div className="flex items-center gap-3">
-                                <div className="bg-slate-100 px-2 py-1 rounded text-center min-w-12">
-                                  <span className="block text-[10px] font-bold text-slate-400 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
-                                  <span className="text-sm font-bold text-slate-700">{new Date(entry.date).getDate()}</span>
+                                <div className="bg-slate-100 dark:bg-slate-800/50 px-2 py-1 rounded text-center min-w-12">
+                                  <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">{new Date(entry.date).toLocaleDateString('nl', { month: 'short' })}</span>
+                                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{new Date(entry.date).getDate()}</span>
                                 </div>
-                                <div className="text-sm font-semibold text-slate-800">{entry.description}</div>
+                                <div className="text-sm font-semibold text-[var(--text-main)] truncate max-w-[180px]">{entry.description}</div>
                               </div>
-                              <button onClick={() => deleteTravel(entry.id)} className="p-2 text-slate-300 hover:text-red-500 transition-all">
+                              <button onClick={() => deleteTravel(entry.id)} className="p-2 text-slate-300 dark:text-slate-600 hover:text-red-500 transition-all">
                                 <Trash2 size={16} />
                               </button>
                             </div>
                             <div className="flex justify-between items-center pl-[60px]">
-                              <span className={`uppercase text-[10px] font-bold px-2 py-0.5 rounded ${
-                                entry.type === 'auto' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'
+                              <span className={`uppercase text-[10px] font-black px-2 py-0.5 rounded border ${
+                                entry.type === 'auto' ? 'bg-blue-500/5 text-blue-500 border-blue-500/20' : 'bg-green-500/5 text-green-500 border-green-500/20'
                               }`}>
                                 {entry.type}
                               </span>
                               <div className="text-right">
-                                <span className="mono-value text-xs text-slate-900 block">{entry.distance.toFixed(1)} km</span>
-                                <span className="text-[10px] text-green-600 font-bold">€{(entry.distance * TRANSPORT_RATES[entry.type]).toFixed(2)}</span>
+                                <span className="mono-value text-xs text-[var(--text-main)] block">{entry.distance.toFixed(1)} km</span>
+                                <span className="text-[10px] text-green-600 dark:text-green-400 font-bold">€{(entry.distance * TRANSPORT_RATES[entry.type]).toFixed(2)}</span>
                               </div>
                             </div>
                           </div>
@@ -1226,31 +1225,41 @@ export default function App() {
                       exit={{ opacity: 0 }}
                       className="p-4 md:p-6 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6"
                     >
-                      {groupedMonthlyData.map(([key, stats]) => (
-                        <div key={key} className="card-panel p-4 md:p-6 hover:border-brand-primary/30 transition-all group">
+                      {groupedMonthlyData.map(([key, stats], index) => (
+                        <div key={key} className={`card-panel p-4 md:p-6 hover:border-brand-primary/30 transition-all group ${
+                          (index === 3 || index === 4 || index === 5) ? 'bg-brand-primary shadow-lg shadow-brand-primary/10' : ''
+                        }`}>
                           <div className="flex justify-between items-start mb-6">
                             <div>
-                              <h4 className="text-base md:text-lg font-bold text-[var(--text-main)] capitalize">{key}</h4>
-                              <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Maandrapport</p>
+                              <h4 className={`text-base md:text-lg font-bold capitalize ${
+                                (index === 3 || index === 4 || index === 5) ? 'text-slate-100' : 'text-[var(--text-main)]'
+                              }`}>{key}</h4>
+                              <p className={`text-[10px] font-semibold uppercase tracking-wider ${
+                                (index === 3 || index === 4 || index === 5) ? 'text-slate-100/60' : 'text-[var(--text-muted)]'
+                              }`}>Maandrapport</p>
                             </div>
                             <button 
                               onClick={() => exportToExcel(key)}
-                              className="flex items-center gap-2 px-3 py-2 bg-brand-primary/10 text-brand-primary rounded-lg text-xs font-bold hover:bg-brand-primary hover:text-white transition-all shadow-sm"
+                              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all shadow-sm ${
+                                (index === 3 || index === 4 || index === 5) 
+                                  ? 'bg-white/20 text-white hover:bg-white/30' 
+                                  : 'bg-brand-primary/10 text-brand-primary hover:bg-brand-primary hover:text-white'
+                              }`}
                             >
                               <Download size={14} /> <span className="hidden sm:inline">Excel</span>
                             </button>
                           </div>
                           
                           <div className="grid grid-cols-2 gap-3 md:gap-4">
-                            <div className="bg-[var(--app-bg)] p-3 rounded-xl border border-[var(--panel-border)]">
+                            <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl border border-[var(--panel-border)] shadow-inner">
                               <span className="label-tiny">Gewerkte Uren</span>
                               <span className="block text-lg md:text-xl mono-value text-[var(--text-main)]">{formatMonoTime(stats.workMin)}</span>
                             </div>
-                            <div className="bg-[var(--app-bg)] p-3 rounded-xl border border-[var(--panel-border)]">
+                            <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl border border-[var(--panel-border)] shadow-inner">
                               <span className="label-tiny">Reiskosten</span>
-                              <span className="block text-lg md:text-xl mono-value text-green-600">€{stats.travelComp.toFixed(2)}</span>
+                              <span className="block text-lg md:text-xl mono-value text-green-600 dark:text-green-400">€{stats.travelComp.toFixed(2)}</span>
                             </div>
-                            <div className="col-span-2 flex items-center justify-between px-3 py-2 bg-[var(--panel-bg)]/50 rounded-lg border border-[var(--panel-border)]">
+                            <div className="col-span-2 flex items-center justify-between px-3 py-2 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg border border-[var(--panel-border)]">
                               <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Afstand</span>
                               <span className="text-xs font-bold text-[var(--text-main)] mono-value">{stats.travelKm.toFixed(1)} km</span>
                             </div>
