@@ -423,8 +423,8 @@ export default function App() {
 
     let totalBalance = 0;
     Object.keys(weeks).forEach(key => {
-      // Exclude current week from the cumulative overtime balance
-      if (key === currentWeekKey) return;
+      // Exclude current week and any future weeks from the cumulative overtime balance
+      if (key >= currentWeekKey) return;
 
       let weekTarget = 36 * 60;
       weeks[key].freeDays.forEach(fd => {
@@ -440,6 +440,90 @@ export default function App() {
     });
 
     return totalBalance;
+  }, [workEntries, freeDays, liveMinutes]);
+
+  const lastThreeWeeks = useMemo(() => {
+    const getMonday = (d: Date) => {
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      const start = new Date(d);
+      start.setDate(diff);
+      start.setHours(0, 0, 0, 0);
+      return start;
+    };
+
+    const currentMonday = getMonday(new Date());
+    const weeksList = [];
+    
+    for (let i = 0; i < 3; i++) {
+      const mon = new Date(currentMonday);
+      mon.setDate(currentMonday.getDate() - (i * 7));
+      
+      const fri = new Date(mon);
+      fri.setDate(mon.getDate() + 4); // Friday
+      
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6); // Sunday to cover full calendar week
+      
+      weeksList.push({
+        mondayDate: mon,
+        fridayDate: fri,
+        sundayDate: sun,
+        key: mon.toISOString().split('T')[0]
+      });
+    }
+    
+    return weeksList.map(({ mondayDate, fridayDate, sundayDate, key }) => {
+      const weekWork = workEntries.filter(e => {
+        const d = new Date(e.date + 'T00:00:00');
+        return d >= mondayDate && d <= sundayDate;
+      });
+      
+      let workedMin = weekWork.reduce((acc, entry) => acc + calculateDuration(entry.startTime, entry.endTime, entry.breakTime), 0);
+      
+      const currentWeekKey = currentMonday.toISOString().split('T')[0];
+      const isCurrentWeek = key === currentWeekKey;
+      if (isCurrentWeek) {
+        workedMin += liveMinutes;
+      }
+      
+      const weekFreeDays = freeDays.filter(fd => {
+        const d = new Date(fd.date + 'T00:00:00');
+        return d >= mondayDate && d <= sundayDate;
+      });
+      
+      let targetMin = 36 * 60;
+      let reduction = 0;
+      weekFreeDays.forEach(fd => {
+        const d = new Date(fd.date + 'T00:00:00');
+        if (d.getDay() === 3) {
+          reduction += 4 * 60;
+        } else {
+          reduction += 8 * 60;
+        }
+      });
+      targetMin = Math.max(0, targetMin - reduction);
+      
+      const overtimeMin = workedMin - targetMin;
+      
+      const formatDateLabel = (mon: Date, fri: Date) => {
+        const monStr = mon.toLocaleDateString('nl', { day: 'numeric', month: 'short' });
+        const friStr = fri.toLocaleDateString('nl', { day: 'numeric', month: 'short' });
+        return `${monStr} t/m ${friStr}`;
+      };
+      
+      return {
+        key,
+        label: isCurrentWeek ? 'Deze week' : `Week van ${mondayDate.toLocaleDateString('nl', { day: 'numeric', month: 'short' })}`,
+        range: formatDateLabel(mondayDate, fridayDate),
+        workedMin,
+        targetMin,
+        overtimeMin,
+        isCurrentWeek,
+        reductionMinutes: reduction,
+        freeDaysCount: weekFreeDays.length
+      };
+    });
   }, [workEntries, freeDays, liveMinutes]);
 
   const startTimer = async () => {
@@ -1333,59 +1417,134 @@ export default function App() {
                     </motion.div>
                   ) : (
                     <motion.div 
-                      key="reports-grid"
+                      key="reports-container"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="p-4 md:p-6 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6"
+                      className="p-4 md:p-6 flex flex-col gap-8"
                     >
-                      {groupedMonthlyData.map(([key, stats], index) => (
-                        <div key={key} className={`card-panel p-4 md:p-6 hover:border-brand-primary/30 transition-all group ${
-                          (index === 3 || index === 4 || index === 5) ? 'bg-brand-primary shadow-lg shadow-brand-primary/10' : ''
-                        }`}>
-                          <div className="flex justify-between items-start mb-6">
-                            <div>
-                              <h4 className={`text-base md:text-lg font-bold capitalize ${
-                                (index === 3 || index === 4 || index === 5) ? 'text-slate-100' : 'text-[var(--text-main)]'
-                              }`}>{key}</h4>
-                              <p className={`text-[10px] font-semibold uppercase tracking-wider ${
-                                (index === 3 || index === 4 || index === 5) ? 'text-slate-100/60' : 'text-[var(--text-muted)]'
-                              }`}>Maandrapport</p>
-                            </div>
-                            <button 
-                              onClick={() => exportToExcel(key)}
-                              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all shadow-sm ${
-                                (index === 3 || index === 4 || index === 5) 
-                                  ? 'bg-white/20 text-white hover:bg-white/30' 
-                                  : 'bg-brand-primary/10 text-brand-primary hover:bg-brand-primary hover:text-white'
-                              }`}
-                            >
-                              <Download size={14} /> <span className="hidden sm:inline">Excel</span>
-                            </button>
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-3 md:gap-4">
-                            <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl border border-[var(--panel-border)] shadow-inner">
-                              <span className="label-tiny">Gewerkte Uren</span>
-                              <span className="block text-lg md:text-xl mono-value text-[var(--text-main)]">{formatMonoTime(stats.workMin)}</span>
-                            </div>
-                            <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl border border-[var(--panel-border)] shadow-inner">
-                              <span className="label-tiny">Reiskosten</span>
-                              <span className="block text-lg md:text-xl mono-value text-green-600 dark:text-green-400">€{stats.travelComp.toFixed(2)}</span>
-                            </div>
-                            <div className="col-span-2 flex items-center justify-between px-3 py-2 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg border border-[var(--panel-border)]">
-                              <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Afstand</span>
-                              <span className="text-xs font-bold text-[var(--text-main)] mono-value">{stats.travelKm.toFixed(1)} km</span>
-                            </div>
-                          </div>
+                      {/* Section 1: Laatste 3 Werkweken */}
+                      <div>
+                        <div className="flex flex-col mb-4 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800/60">
+                          <h3 className="text-sm font-bold text-[var(--text-main)] uppercase tracking-wider text-brand-primary">Glijtijd & Overuren (Laatste 3 Weken)</h3>
+                          <p className="text-[11px] text-[var(--text-muted)] font-medium mt-0.5">Visueel week-voor-week overzicht van je prestaties inclusief vrije dagen.</p>
                         </div>
-                      ))}
-                      {groupedMonthlyData.length === 0 && (
-                        <div className="col-span-2 flex flex-col items-center justify-center py-10 text-slate-300 text-center">
-                           <BarChart3 size={40} className="mb-2 opacity-20" />
-                           <p className="text-sm font-medium">Nog geen data beschikbaar voor rapportage.</p>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {lastThreeWeeks.map((week) => {
+                            return (
+                              <div 
+                                key={week.key} 
+                                className={`card-panel p-4 flex flex-col justify-between border-slate-200 dark:border-slate-800/80 transition-all ${
+                                  week.isCurrentWeek 
+                                    ? 'bg-gradient-to-br from-[var(--panel-bg)] to-brand-primary/5 border-brand-primary/20 shadow-md ring-1 ring-brand-primary/10' 
+                                    : 'bg-[var(--panel-bg)] hover:border-slate-300 dark:hover:border-slate-700/80'
+                                }`}
+                              >
+                                <div className="mb-3">
+                                  <div className="flex justify-between items-start">
+                                    <h4 className="text-xs font-bold text-[var(--text-main)] truncate" title={week.label}>{week.label}</h4>
+                                    {week.isCurrentWeek && (
+                                      <span className="bg-brand-primary/10 text-brand-primary dark:bg-brand-primary/25 text-[8px] font-black uppercase px-2 py-0.5 rounded tracking-wider shrink-0">Actief</span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-[var(--text-muted)] font-medium uppercase tracking-wider block mt-0.5">{week.range}</span>
+                                </div>
+
+                                <div className="space-y-2 mt-2">
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="text-[var(--text-muted)] font-medium">Weekdoel</span>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-mono font-bold text-[var(--text-main)]">{formatMonoTime(week.targetMin)}</span>
+                                      {week.reductionMinutes > 0 && (
+                                        <span className="text-[9px] text-indigo-500 font-bold uppercase" title={`${week.freeDaysCount} vrije dag(en)`}>
+                                          (-{formatMonoTime(week.reductionMinutes)})
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="text-[var(--text-muted)] font-medium">Gewerkt</span>
+                                    <span className="font-mono font-bold text-[var(--text-main)]">{formatMonoTime(week.workedMin)}</span>
+                                  </div>
+
+                                  <div className="border-t border-dashed border-slate-100 dark:border-slate-800/80 pt-2 flex justify-between items-center text-xs">
+                                    <span className="font-semibold text-[var(--text-main)]">Resultaat</span>
+                                    <span className={`font-mono font-bold px-2 py-0.5 rounded text-[10px] ${
+                                      week.overtimeMin > 0 
+                                        ? 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400' 
+                                        : week.overtimeMin < 0 
+                                          ? 'bg-red-500/10 text-red-500 dark:bg-red-500/20 dark:text-red-400'
+                                          : 'bg-slate-100 dark:bg-slate-800 text-[var(--text-muted)]'
+                                    }`}>
+                                      {week.overtimeMin > 0 ? '+' : ''}{formatMonoTime(week.overtimeMin)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      )}
+                      </div>
+
+                      {/* Section 2: Overzicht per Maand */}
+                      <div>
+                        <div className="flex flex-col mb-4 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800/60">
+                          <h3 className="text-sm font-bold text-[var(--text-main)] uppercase tracking-wider text-brand-primary">Overzicht per Maand</h3>
+                          <p className="text-[11px] text-[var(--text-muted)] font-medium mt-0.5">Exporteer maandrapporten naar Excel of bekijk gecumuleerde reiskosten.</p>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                          {groupedMonthlyData.map(([key, stats], index) => (
+                            <div key={key} className={`card-panel p-4 md:p-6 hover:border-brand-primary/30 transition-all group ${
+                              (index === 3 || index === 4 || index === 5) ? 'bg-brand-primary shadow-lg shadow-brand-primary/10' : ''
+                            }`}>
+                              <div className="flex justify-between items-start mb-6">
+                                <div>
+                                  <h4 className={`text-base md:text-lg font-bold capitalize ${
+                                    (index === 3 || index === 4 || index === 5) ? 'text-slate-100' : 'text-[var(--text-main)]'
+                                  }`}>{key}</h4>
+                                  <p className={`text-[10px] font-semibold uppercase tracking-wider ${
+                                    (index === 3 || index === 4 || index === 5) ? 'text-slate-100/60' : 'text-[var(--text-muted)]'
+                                  }`}>Maandrapport</p>
+                                </div>
+                                <button 
+                                  onClick={() => exportToExcel(key)}
+                                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all shadow-sm ${
+                                    (index === 3 || index === 4 || index === 5) 
+                                      ? 'bg-white/20 text-white hover:bg-white/30' 
+                                      : 'bg-brand-primary/10 text-brand-primary hover:bg-brand-primary hover:text-white'
+                                  }`}
+                                >
+                                  <Download size={14} /> <span className="hidden sm:inline">Excel</span>
+                                </button>
+                              </div>
+                              
+                              <div className="grid grid-cols-2 gap-3 md:gap-4">
+                                <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl border border-[var(--panel-border)] shadow-inner">
+                                  <span className="label-tiny">Gewerkte Uren</span>
+                                  <span className="block text-lg md:text-xl mono-value text-[var(--text-main)]">{formatMonoTime(stats.workMin)}</span>
+                                </div>
+                                <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl border border-[var(--panel-border)] shadow-inner">
+                                  <span className="label-tiny">Reiskosten</span>
+                                  <span className="block text-lg md:text-xl mono-value text-green-600 dark:text-green-400">€{stats.travelComp.toFixed(2)}</span>
+                                </div>
+                                <div className="col-span-2 flex items-center justify-between px-3 py-2 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg border border-[var(--panel-border)]">
+                                  <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Afstand</span>
+                                  <span className="text-xs font-bold text-[var(--text-main)] mono-value">{stats.travelKm.toFixed(1)} km</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {groupedMonthlyData.length === 0 && (
+                            <div className="col-span-2 flex flex-col items-center justify-center py-10 text-slate-300 text-center">
+                               <BarChart3 size={40} className="mb-2 opacity-20" />
+                               <p className="text-sm font-medium">Nog geen data beschikbaar voor rapportage.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
