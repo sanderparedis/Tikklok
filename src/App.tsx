@@ -625,7 +625,8 @@ export default function App() {
     } else if (routeCategory === "custom") {
       const dist = Number(formData.get('distance_manual'));
       distance = dist * (isReturn ? 2 : 1);
-      description = `Aangepast traject ${isReturn ? '(H&T)' : ''}`;
+      const customDesc = formData.get('custom_description') as string;
+      description = `${customDesc || 'Aangepast traject'} ${isReturn ? '(H&T)' : ''}`;
       finalType = transportType;
     } else {
       const start = formData.get('startLocation') as string;
@@ -1040,6 +1041,19 @@ export default function App() {
                           <p className="text-sm font-mono font-bold text-brand-primary">
                             {ROUTE_DISTANCES[startLocation]?.[endLocation] || 0} km
                           </p>
+                        </div>
+                      )}
+
+                      {travelRouteType === 'custom' && (
+                        <div className="space-y-1">
+                          <label className="label-tiny">Omschrijving verplaatsing</label>
+                          <input 
+                            type="text" 
+                            name="custom_description" 
+                            required 
+                            className="input-field" 
+                            placeholder="bijv. Klantbezoek Hasselt" 
+                          />
                         </div>
                       )}
 
