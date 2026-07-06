@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { Clock, Car, ChevronRight, Trash2, MapPin, Briefcase, BarChart3, Download, LogIn, LogOut, Sun, Moon, GraduationCap, School, Pencil, Check, X } from 'lucide-react';
+import { Clock, Car, ChevronRight, ChevronDown, Trash2, MapPin, Briefcase, BarChart3, Download, LogIn, LogOut, Sun, Moon, GraduationCap, School, Pencil, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { auth, db, signInWithGoogle, logout, OperationType, handleFirestoreError } from './lib/firebase';
@@ -51,6 +51,13 @@ interface FreeDay {
   type: FreeDayType;
 }
 
+interface VacationPeriod {
+  id: string;
+  startDate: string;
+  endDate: string;
+  description: string;
+}
+
 const TRANSPORT_RATES: Record<TransportType, number> = {
   auto: 0.4004,
   fiets: 0.21
@@ -88,6 +95,97 @@ const formatTimer = (minutes: number): string => {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
+const toLocalYYYYMMDD = (date: Date): string => {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const isSummerDate = (dateStr: string): boolean => {
+  const d = new Date(dateStr + 'T00:00:00');
+  const month = d.getMonth(); // 0 = Jan, 5 = June, 6 = July, 7 = Aug
+  return month === 6 || month === 7;
+};
+
+const isWeekFullySummer = (mondayStr: string): boolean => {
+  const mon = new Date(mondayStr + 'T00:00:00');
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(mon);
+    d.setDate(mon.getDate() + i);
+    const dateStr = toLocalYYYYMMDD(d);
+    if (!isSummerDate(dateStr)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const getSchoolYearForDate = (dateStr: string): string => {
+  const d = new Date(dateStr + 'T00:00:00');
+  const year = d.getFullYear();
+  const month = d.getMonth(); // 0 = Jan, 5 = June, 6 = July
+  
+  if (month >= 6) { // July (6) to December (11)
+    return `${year}-${year + 1}`;
+  } else { // January (0) to June (5)
+    return `${year - 1}-${year}`;
+  }
+};
+
+const formatWeekLabel = (mondayStr: string): string => {
+  const d = new Date(mondayStr + 'T00:00:00');
+  const startStr = d.toLocaleDateString('nl', { day: 'numeric', month: 'short' });
+  const end = new Date(d);
+  end.setDate(d.getDate() + 4); // Friday
+  const endStr = end.toLocaleDateString('nl', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${startStr} t/m ${endStr}`;
+};
+
+const calculateWeekTarget = (
+  mondayStr: string, 
+  freeDays: FreeDay[], 
+  vacationPeriods: VacationPeriod[]
+): { targetMin: number, reductionMin: number, freeDaysCount: number, summerDaysCount: number } => {
+  const mon = new Date(mondayStr + 'T00:00:00');
+  let targetMin = 36 * 60;
+  let reductionMin = 0;
+  let freeDaysCount = 0;
+  let summerDaysCount = 0;
+
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(mon);
+    d.setDate(mon.getDate() + i);
+    const dateStr = toLocalYYYYMMDD(d);
+    
+    const isFree = freeDays.some(fd => fd.date === dateStr);
+    const isVacation = vacationPeriods.some(vp => dateStr >= vp.startDate && dateStr <= vp.endDate);
+    const isSummer = isSummerDate(dateStr);
+
+    if (isFree || isVacation || isSummer) {
+      const dayOfWeek = d.getDay(); // 0 = Sun, 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat
+      if (dayOfWeek === 3) { // Wednesday is 4 hours
+        reductionMin += 4 * 60;
+      } else { // other weekdays are 8 hours
+        reductionMin += 8 * 60;
+      }
+      
+      if (isSummer) {
+        summerDaysCount++;
+      } else {
+        freeDaysCount++;
+      }
+    }
+  }
+
+  return {
+    targetMin: Math.max(0, targetMin - reductionMin),
+    reductionMin,
+    freeDaysCount,
+    summerDaysCount
+  };
+};
+
 // --- Components ---
 
 export default function App() {
@@ -97,6 +195,8 @@ export default function App() {
   const [workEntries, setWorkEntries] = useState<WorkEntry[]>([]);
   const [travelEntries, setTravelEntries] = useState<TravelEntry[]>([]);
   const [freeDays, setFreeDays] = useState<FreeDay[]>([]);
+  const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
+  const [vacationStart, setVacationStart] = useState<string>(() => toLocalYYYYMMDD(new Date()));
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark' || 
@@ -129,6 +229,7 @@ export default function App() {
   const [travelRouteType, setTravelRouteType] = useState<string>('preset');
   const [startLocation, setStartLocation] = useState<string>(LOCATIONS[0]);
   const [endLocation, setEndLocation] = useState<string>(LOCATIONS[1]);
+  const [expandedSchoolYear, setExpandedSchoolYear] = useState<string | null>(null);
 
   // Auth listener
   useEffect(() => {
@@ -213,6 +314,20 @@ export default function App() {
     }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/freeDays`));
   }, [user]);
 
+  // Sync vacation periods
+  useEffect(() => {
+    if (!user) {
+      setVacationPeriods([]);
+      return;
+    }
+    const q = collection(db, 'users', user.uid, 'vacationPeriods');
+    return onSnapshot(q, (snapshot) => {
+      const entries = snapshot.docs.map(doc => ({ ...doc.data() } as VacationPeriod));
+      const sorted = [...entries].sort((a, b) => b.startDate.localeCompare(a.startDate));
+      setVacationPeriods(sorted);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/vacationPeriods`));
+  }, [user]);
+
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(Date.now()), 1000);
     return () => clearInterval(interval);
@@ -222,7 +337,7 @@ export default function App() {
     // Filter entries for the selected month using the same key generator as groupedMonthlyData
     const getMonthKey = (dateStr: string) => new Date(dateStr + 'T00:00:00').toLocaleString('nl', { month: 'long', year: 'numeric' });
 
-    const monthWork = workEntries.filter(e => getMonthKey(e.date) === monthKey);
+    const monthWork = workEntries.filter(e => getMonthKey(e.date) === monthKey && !isSummerDate(e.date));
     const monthTravel = travelEntries.filter(e => getMonthKey(e.date) === monthKey);
 
     // Create Work Sheet
@@ -260,6 +375,7 @@ export default function App() {
     const getMonthKey = (dateStr: string) => new Date(dateStr + 'T00:00:00').toLocaleString('nl', { month: 'long', year: 'numeric' });
 
     workEntries.forEach(e => {
+      if (isSummerDate(e.date)) return;
       const key = getMonthKey(e.date);
       if (!groups[key]) groups[key] = { workMin: 0, travelComp: 0, travelKm: 0 };
       groups[key].workMin += calculateDuration(e.startTime, e.endTime, e.breakTime);
@@ -297,7 +413,7 @@ export default function App() {
     return workEntries
       .filter(e => {
         const entryDate = new Date(e.date + 'T00:00:00');
-        return entryDate >= startOfWeek;
+        return entryDate >= startOfWeek && !isSummerDate(e.date);
       })
       .reduce((acc, entry) => acc + calculateDuration(entry.startTime, entry.endTime, entry.breakTime), 0);
   }, [workEntries]);
@@ -359,6 +475,9 @@ export default function App() {
     const startOfWeek = new Date(now);
     startOfWeek.setDate(diff);
     startOfWeek.setHours(0, 0, 0, 0);
+    const mondayStr = toLocalYYYYMMDD(startOfWeek);
+
+    const { targetMin } = calculateWeekTarget(mondayStr, freeDays, vacationPeriods);
 
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 7);
@@ -368,79 +487,126 @@ export default function App() {
       return d >= startOfWeek && d < endOfWeek;
     });
 
-    let reduction = 0;
-    weekFreeDays.forEach(fd => {
-      const d = new Date(fd.date + 'T00:00:00');
-      // getDay(): 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-      if (d.getDay() === 3) {
-        reduction += 4 * 60; // 4 hours
-      } else {
-        reduction += 8 * 60; // 8 hours
-      }
-    });
-
     return { 
-      currentTargetMinutes: Math.max(0, (36 * 60) - reduction),
+      currentTargetMinutes: targetMin,
       weeklyFreeDays: weekFreeDays
     };
-  }, [freeDays]);
+  }, [freeDays, vacationPeriods]);
 
-  const progressPercent = Math.min(100, ((currentWeekWorkMin + liveMinutes) / currentTargetMinutes) * 100);
+  const progressPercent = currentTargetMinutes > 0 
+    ? Math.min(100, ((currentWeekWorkMin + liveMinutes) / currentTargetMinutes) * 100) 
+    : 0;
 
-  const overtimeBalance = useMemo(() => {
-    const weeks: Record<string, { worked: number, freeDays: FreeDay[] }> = {};
-    
+  const schoolYearsData = useMemo(() => {
+    const yearsMap: Record<string, { workedMin: number; targetMin: number; weeks: Record<string, { worked: number; target: number }> }> = {};
+
     const getWeekKey = (dateStr: string) => {
       const d = new Date(dateStr + 'T00:00:00');
       const day = d.getDay();
       const diff = d.getDate() - day + (day === 0 ? -6 : 1);
       const start = new Date(d);
       start.setDate(diff);
-      start.setHours(0, 0, 0, 0);
-      return start.toISOString().split('T')[0];
+      return toLocalYYYYMMDD(start);
     };
 
-    // Initialize current week to ensure it's included
-    const currentWeekKey = getWeekKey(new Date().toISOString().split('T')[0]);
-    weeks[currentWeekKey] = { worked: 0, freeDays: [] };
+    const currentWeekKey = getWeekKey(toLocalYYYYMMDD(new Date()));
 
-    // Group work
+    // Collect all weeks with work entries, free days, or the current week
+    const allWeekKeys = new Set<string>();
     workEntries.forEach(e => {
-      const key = getWeekKey(e.date);
-      if (!weeks[key]) weeks[key] = { worked: 0, freeDays: [] };
-      weeks[key].worked += calculateDuration(e.startTime, e.endTime, e.breakTime);
+      const wk = getWeekKey(e.date);
+      if (!isWeekFullySummer(wk)) {
+        allWeekKeys.add(wk);
+      }
     });
-
-    // Add live minutes to current week
-    weeks[currentWeekKey].worked += liveMinutes;
-
-    // Group free days
     freeDays.forEach(fd => {
-      const key = getWeekKey(fd.date);
-      if (!weeks[key]) weeks[key] = { worked: 0, freeDays: [] };
-      weeks[key].freeDays.push(fd);
+      const wk = getWeekKey(fd.date);
+      if (!isWeekFullySummer(wk)) {
+        allWeekKeys.add(wk);
+      }
+    });
+    if (!isWeekFullySummer(currentWeekKey)) {
+      allWeekKeys.add(currentWeekKey);
+    }
+
+    allWeekKeys.forEach(weekKey => {
+      const schoolYear = getSchoolYearForDate(weekKey);
+      if (!yearsMap[schoolYear]) {
+        yearsMap[schoolYear] = { workedMin: 0, targetMin: 0, weeks: {} };
+      }
+
+      let worked = workEntries
+        .filter(e => getWeekKey(e.date) === weekKey && !isSummerDate(e.date))
+        .reduce((acc, entry) => acc + calculateDuration(entry.startTime, entry.endTime, entry.breakTime), 0);
+
+      if (weekKey === currentWeekKey) {
+        const today = new Date();
+        const m = today.getMonth();
+        if (m !== 6 && m !== 7) {
+          worked += liveMinutes;
+        }
+      }
+
+      const { targetMin } = calculateWeekTarget(weekKey, freeDays, vacationPeriods);
+
+      yearsMap[schoolYear].weeks[weekKey] = { worked, target: targetMin };
     });
 
-    let totalBalance = 0;
-    Object.keys(weeks).forEach(key => {
-      // Exclude current week and any future weeks from the cumulative overtime balance
-      if (key >= currentWeekKey) return;
+    return Object.entries(yearsMap).map(([schoolYear, data]) => {
+      let totalWorked = 0;
+      let totalTarget = 0;
+      let completedOvertime = 0;
+      let activeOvertime = 0;
 
-      let weekTarget = 36 * 60;
-      weeks[key].freeDays.forEach(fd => {
-        const d = new Date(fd.date + 'T00:00:00');
-        if (d.getDay() === 3) {
-          weekTarget -= 4 * 60;
-        } else {
-          weekTarget -= 8 * 60;
+      const weeks = Object.entries(data.weeks).map(([weekKey, weekData]) => {
+        const { reductionMin, freeDaysCount, summerDaysCount } = calculateWeekTarget(weekKey, freeDays, vacationPeriods);
+        return {
+          weekKey,
+          worked: weekData.worked,
+          target: weekData.target,
+          reductionMin,
+          freeDaysCount,
+          summerDaysCount,
+          balance: weekData.worked - weekData.target
+        };
+      })
+      .filter(w => !isWeekFullySummer(w.weekKey))
+      .sort((a, b) => b.weekKey.localeCompare(a.weekKey));
+
+      Object.entries(data.weeks).forEach(([weekKey, weekData]) => {
+        totalWorked += weekData.worked;
+        totalTarget += weekData.target;
+
+        if (weekKey < currentWeekKey) {
+          completedOvertime += (weekData.worked - weekData.target);
+        } else if (weekKey === currentWeekKey) {
+          activeOvertime = (weekData.worked - weekData.target);
         }
       });
-      weekTarget = Math.max(0, weekTarget);
-      totalBalance += (weeks[key].worked - weekTarget);
-    });
 
-    return totalBalance;
-  }, [workEntries, freeDays, liveMinutes]);
+      const isCurrent = schoolYear === getSchoolYearForDate(new Date().toISOString().split('T')[0]);
+
+      return {
+        schoolYear,
+        totalWorked,
+        totalTarget,
+        overtimeBalance: completedOvertime,
+        activeOvertime,
+        isCurrent,
+        weeksCount: Object.keys(data.weeks).length,
+        weeks
+      };
+    }).sort((a, b) => b.schoolYear.localeCompare(a.schoolYear));
+  }, [workEntries, freeDays, vacationPeriods, liveMinutes]);
+
+  const currentSchoolYear = useMemo(() => {
+    return getSchoolYearForDate(new Date().toISOString().split('T')[0]);
+  }, []);
+
+  const overtimeBalance = useMemo(() => {
+    const currentYearData = schoolYearsData.find(y => y.schoolYear === currentSchoolYear);
+    return currentYearData ? currentYearData.overtimeBalance : 0;
+  }, [schoolYearsData, currentSchoolYear]);
 
   const lastThreeWeeks = useMemo(() => {
     const getMonday = (d: Date) => {
@@ -476,7 +642,7 @@ export default function App() {
     return weeksList.map(({ mondayDate, fridayDate, sundayDate, key }) => {
       const weekWork = workEntries.filter(e => {
         const d = new Date(e.date + 'T00:00:00');
-        return d >= mondayDate && d <= sundayDate;
+        return d >= mondayDate && d <= sundayDate && !isSummerDate(e.date);
       });
       
       let workedMin = weekWork.reduce((acc, entry) => acc + calculateDuration(entry.startTime, entry.endTime, entry.breakTime), 0);
@@ -487,23 +653,7 @@ export default function App() {
         workedMin += liveMinutes;
       }
       
-      const weekFreeDays = freeDays.filter(fd => {
-        const d = new Date(fd.date + 'T00:00:00');
-        return d >= mondayDate && d <= sundayDate;
-      });
-      
-      let targetMin = 36 * 60;
-      let reduction = 0;
-      weekFreeDays.forEach(fd => {
-        const d = new Date(fd.date + 'T00:00:00');
-        if (d.getDay() === 3) {
-          reduction += 4 * 60;
-        } else {
-          reduction += 8 * 60;
-        }
-      });
-      targetMin = Math.max(0, targetMin - reduction);
-      
+      const { targetMin, reductionMin, freeDaysCount } = calculateWeekTarget(key, freeDays, vacationPeriods);
       const overtimeMin = workedMin - targetMin;
       
       const formatDateLabel = (mon: Date, fri: Date) => {
@@ -520,11 +670,11 @@ export default function App() {
         targetMin,
         overtimeMin,
         isCurrentWeek,
-        reductionMinutes: reduction,
-        freeDaysCount: weekFreeDays.length
+        reductionMinutes: reductionMin,
+        freeDaysCount: freeDaysCount
       };
     });
-  }, [workEntries, freeDays, liveMinutes]);
+  }, [workEntries, freeDays, vacationPeriods, liveMinutes]);
 
   const startTimer = async () => {
     if (!user) return;
@@ -733,6 +883,49 @@ export default function App() {
     }
   };
 
+  const addVacationPeriod = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!user) return;
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    const id = crypto.randomUUID();
+    
+    const startDate = formData.get('startDate') as string;
+    const endDate = formData.get('endDate') as string;
+    const description = formData.get('description') as string;
+
+    if (startDate > endDate) {
+      return;
+    }
+
+    const newEntry = {
+      id,
+      startDate,
+      endDate,
+      description: description || 'Vakantie',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      const entryRef = doc(db, 'users', user.uid, 'vacationPeriods', id);
+      await setDoc(entryRef, newEntry);
+      form.reset();
+      setVacationStart(toLocalYYYYMMDD(new Date()));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/vacationPeriods/${id}`);
+    }
+  };
+
+  const deleteVacationPeriod = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'users', user.uid, 'vacationPeriods', id));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/vacationPeriods/${id}`);
+    }
+  };
+
   const formatMonoTime = (totalMinutes: number) => {
     const h = Math.floor(totalMinutes / 60);
     const m = Math.floor(totalMinutes % 60);
@@ -869,7 +1062,7 @@ export default function App() {
               </span>
             </div>
             <div className="card-panel px-3 md:px-4 py-2 border-slate-200 dark:border-slate-800 flex-1 sm:min-w-32">
-              <span className="label-tiny">Overuren</span>
+              <span className="label-tiny">Overuren ({currentSchoolYear})</span>
               <span className={`text-base md:text-lg mono-value block ${
                 overtimeBalance > 20 * 60 ? 'text-purple-600 dark:text-purple-400' : 
                 overtimeBalance > 0 ? 'text-green-600 dark:text-green-400' : 
@@ -1131,6 +1324,74 @@ export default function App() {
                   </form>
                 </div>
               )}
+
+              {activeTab === 'hours' && (
+                <div className="card-panel p-6 flex flex-col shrink-0">
+                  <h3 className="label-tiny mb-6">Lange Vakantieperiode</h3>
+                  <form onSubmit={addVacationPeriod} className="flex flex-col gap-4">
+                    <div className="space-y-1">
+                      <label className="label-tiny">Startdatum</label>
+                      <input 
+                        type="date" 
+                        name="startDate" 
+                        required 
+                        className="input-field" 
+                        value={vacationStart}
+                        onChange={(e) => setVacationStart(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="label-tiny">Einddatum</label>
+                      <input 
+                        type="date" 
+                        name="endDate" 
+                        required 
+                        className="input-field" 
+                        min={vacationStart || undefined}
+                        defaultValue={new Date().toISOString().split('T')[0]} 
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="label-tiny">Omschrijving</label>
+                      <input 
+                        type="text" 
+                        name="description" 
+                        required 
+                        className="input-field" 
+                        placeholder="bijv. Zomervakantie" 
+                      />
+                    </div>
+                    <button type="submit" className="mt-2 w-full btn-primary bg-indigo-600 hover:bg-indigo-700 border-none">
+                      Vakantie Toevoegen
+                    </button>
+                  </form>
+
+                  {vacationPeriods.length > 0 && (
+                    <div className="mt-6 border-t border-slate-100 dark:border-slate-800/60 pt-4">
+                      <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Actieve Vakantieperiodes</h4>
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {vacationPeriods.map(vp => (
+                          <div key={vp.id} className="flex items-center justify-between p-2.5 rounded bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 text-xs">
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold text-[var(--text-main)] truncate">{vp.description}</p>
+                              <p className="text-[10px] text-[var(--text-muted)] font-medium">
+                                {new Date(vp.startDate).toLocaleDateString('nl', { day: 'numeric', month: 'short' })} t/m {new Date(vp.endDate).toLocaleDateString('nl', { day: 'numeric', month: 'short' })}
+                              </p>
+                            </div>
+                            <button 
+                              onClick={() => deleteVacationPeriod(vp.id)} 
+                              className="p-1.5 text-slate-400 hover:text-red-500 rounded transition-colors ml-2 shrink-0"
+                              title="Verwijderen"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
           )}
 
@@ -1218,6 +1479,9 @@ export default function App() {
                                       <span className="bg-slate-50 dark:bg-slate-900/40 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-800/80">{entry.startTime}</span>
                                       <ChevronRight size={10} className="text-slate-300 dark:text-slate-600" />
                                       <span className="bg-slate-50 dark:bg-slate-900/40 px-2.5 py-1 rounded text-xs font-mono font-medium text-[var(--text-muted)] min-w-[55px] text-center tabular-nums border border-slate-200/50 dark:border-slate-800/80">{entry.endTime}</span>
+                                      {vacationPeriods.some(vp => entry.date >= vp.startDate && entry.date <= vp.endDate) && (
+                                        <span className="bg-indigo-500/10 text-indigo-500 dark:bg-indigo-500/20 text-[9px] font-black uppercase px-2 py-0.5 rounded tracking-wide shrink-0 border border-indigo-500/20" title="Geregistreerd tijdens vakantie (telt als overuren)">Vakantie</span>
+                                      )}
                                     </>
                                   )}
                                 </div>
@@ -1319,6 +1583,9 @@ export default function App() {
                                         <span>{entry.startTime}</span>
                                         <ChevronRight size={10} className="text-slate-300 dark:text-slate-600" />
                                         <span>{entry.endTime}</span>
+                                        {vacationPeriods.some(vp => entry.date >= vp.startDate && entry.date <= vp.endDate) && (
+                                          <span className="bg-indigo-500/10 text-indigo-500 dark:bg-indigo-500/20 text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-wide shrink-0 border border-indigo-500/20" title="Geregistreerd tijdens vakantie (telt als overuren)">Vakantie</span>
+                                        )}
                                       </div>
                                     )}
                                     <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('nl', { weekday: 'long' })}</span>
@@ -1558,6 +1825,156 @@ export default function App() {
                             </div>
                           )}
                         </div>
+                      </div>
+
+                      {/* Section 3: Overuren per Schooljaar (Snapshots) */}
+                      <div className="mt-8">
+                        <div className="flex flex-col mb-4 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800/60">
+                          <h3 className="text-sm font-bold text-[var(--text-main)] uppercase tracking-wider text-brand-primary">Schooljaren & Overuren Snapshots</h3>
+                          <p className="text-[11px] text-[var(--text-muted)] font-medium mt-0.5">Overuren worden aan het einde van het schooljaar (30 juni) gearchiveerd en niet meegenomen naar het volgende jaar. Klik op een schooljaar om de week-tot-week specificatie te zien.</p>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {schoolYearsData.map((sy) => {
+                            const rangeStart = `1 sep ${sy.schoolYear.split('-')[0]}`;
+                            const rangeEnd = `30 jun ${sy.schoolYear.split('-')[1]}`;
+                            const isExpanded = expandedSchoolYear === sy.schoolYear;
+                            return (
+                              <div 
+                                key={sy.schoolYear} 
+                                onClick={() => setExpandedSchoolYear(isExpanded ? null : sy.schoolYear)}
+                                className={`card-panel p-4 flex flex-col justify-between border-slate-200 dark:border-slate-800/80 transition-all cursor-pointer select-none ${
+                                  sy.isCurrent 
+                                    ? 'bg-gradient-to-br from-[var(--panel-bg)] to-brand-primary/5 border-brand-primary/20 shadow-md ring-1 ring-brand-primary/10' 
+                                    : 'bg-[var(--panel-bg)] hover:border-slate-300 dark:hover:border-slate-700/80'
+                                } ${isExpanded ? 'ring-2 ring-indigo-500 border-transparent dark:ring-indigo-400' : ''}`}
+                              >
+                                <div className="mb-3">
+                                  <div className="flex justify-between items-start gap-2">
+                                    <h4 className="text-xs font-bold text-[var(--text-main)] truncate">Schooljaar {sy.schoolYear}</h4>
+                                    {sy.isCurrent ? (
+                                      <span className="bg-brand-primary/10 text-brand-primary dark:bg-brand-primary/25 text-[8px] font-black uppercase px-2 py-0.5 rounded tracking-wider shrink-0">Lopend</span>
+                                    ) : (
+                                      <span className="bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/25 dark:text-emerald-400 text-[8px] font-black uppercase px-2 py-0.5 rounded tracking-wider shrink-0">Snapshot</span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-[var(--text-muted)] font-medium uppercase tracking-wider block mt-0.5">{rangeStart} t/m {rangeEnd}</span>
+                                </div>
+
+                                <div className="space-y-2 mt-2">
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="text-[var(--text-muted)] font-medium">Gewerkt</span>
+                                    <span className="font-mono font-bold text-[var(--text-main)]">{formatMonoTime(sy.totalWorked)}</span>
+                                  </div>
+
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="text-[var(--text-muted)] font-medium">Doeluren</span>
+                                    <span className="font-mono font-bold text-[var(--text-main)]">{formatMonoTime(sy.totalTarget)}</span>
+                                  </div>
+                                  
+                                  <div className="border-t border-dashed border-slate-100 dark:border-slate-800/80 pt-2 flex justify-between items-center text-xs">
+                                    <span className="font-semibold text-[var(--text-main)]">
+                                      {sy.isCurrent ? 'Saldo (lopend)' : 'Overuren Gearchiveerd'}
+                                    </span>
+                                    <span className={`font-mono font-bold px-2 py-0.5 rounded text-[10px] ${
+                                      sy.overtimeBalance > 0 
+                                        ? 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400' 
+                                        : sy.overtimeBalance < 0 
+                                          ? 'bg-red-500/10 text-red-500 dark:bg-red-500/20 dark:text-red-400'
+                                          : 'bg-slate-100 dark:bg-slate-800 text-[var(--text-muted)]'
+                                    }`}>
+                                      {sy.overtimeBalance > 0 ? '+' : ''}{formatMonoTime(sy.overtimeBalance)}
+                                    </span>
+                                  </div>
+
+                                  <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/40 flex justify-center items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+                                    <span>{isExpanded ? 'Details Verbergen' : 'Details Weergeven'}</span>
+                                    <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {expandedSchoolYear && (() => {
+                          const selectedYear = schoolYearsData.find(y => y.schoolYear === expandedSchoolYear);
+                          if (!selectedYear) return null;
+                          return (
+                            <div className="mt-6 p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80">
+                              <div className="flex justify-between items-start mb-4">
+                                <div>
+                                  <h4 className="text-sm font-bold text-[var(--text-main)]">
+                                    Week-tot-week specificatie schooljaar {selectedYear.schoolYear}
+                                  </h4>
+                                  <p className="text-[11px] text-[var(--text-muted)] font-medium mt-0.5">
+                                    Hieronder zie je de opbouw van je uren per geregistreerde week. Weken waarin geen uren of vrije dagen zijn geregistreerd, worden weggelaten.
+                                  </p>
+                                </div>
+                                <button 
+                                  onClick={() => setExpandedSchoolYear(null)}
+                                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </div>
+
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs border-collapse">
+                                  <thead>
+                                    <tr className="border-b border-slate-200 dark:border-slate-800/80 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                      <th className="py-2.5 px-3">Week</th>
+                                      <th className="py-2.5 px-3">Gewerkt</th>
+                                      <th className="py-2.5 px-3">Doeluren (Doel)</th>
+                                      <th className="py-2.5 px-3 text-right">Saldo</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                    {selectedYear.weeks.map((wk) => {
+                                      const currentWeekKey = schoolYearsData.find(y => y.isCurrent)?.weeks.find(w => w.weekKey === wk.weekKey)?.weekKey;
+                                      return (
+                                        <tr key={wk.weekKey} className="hover:bg-slate-100/40 dark:hover:bg-slate-800/20">
+                                          <td className="py-2.5 px-3 font-medium text-[var(--text-main)]">
+                                            {formatWeekLabel(wk.weekKey)}
+                                            {wk.weekKey === currentWeekKey && (
+                                              <span className="ml-2 bg-brand-primary/10 text-brand-primary dark:bg-brand-primary/25 text-[8px] font-black uppercase px-1.5 py-0.5 rounded">Huidig</span>
+                                            )}
+                                          </td>
+                                          <td className="py-2.5 px-3 font-mono font-semibold text-[var(--text-main)]">
+                                            {formatMonoTime(wk.worked)}
+                                          </td>
+                                          <td className="py-2.5 px-3 text-[var(--text-muted)]">
+                                            <span className="font-mono font-medium">{formatMonoTime(wk.target)}</span>
+                                            {wk.reductionMin > 0 && (
+                                              <span className="ml-1 text-[10px] font-medium text-indigo-500 dark:text-indigo-400">
+                                                (verlaagd met {formatMonoTime(wk.reductionMin)}
+                                                {wk.summerDaysCount > 0 && wk.freeDaysCount > 0 
+                                                  ? ` i.v.m. zomervakantie & ${wk.freeDaysCount}v` 
+                                                  : wk.summerDaysCount > 0 
+                                                    ? ' i.v.m. zomervakantie' 
+                                                    : ` i.v.m. ${wk.freeDaysCount}v`}
+                                                )
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className={`py-2.5 px-3 text-right font-mono font-bold ${
+                                            wk.balance > 0 
+                                              ? 'text-green-600 dark:text-green-400' 
+                                              : wk.balance < 0 
+                                                ? 'text-red-500 dark:text-red-400'
+                                                : 'text-[var(--text-muted)]'
+                                          }`}>
+                                            {wk.balance > 0 ? '+' : ''}{formatMonoTime(wk.balance)}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </motion.div>
                   )}

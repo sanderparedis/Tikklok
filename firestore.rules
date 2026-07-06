@@ -151,6 +151,25 @@ service cloud.firestore {
           
         allow delete: if isOwner(userId) && isValidId(dayId);
       }
+
+      // Vacation Periods
+      match /vacationPeriods/{vacationId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(vacationId);
+        
+        allow create: if isOwner(userId) 
+          && isValidId(vacationId) 
+          && incoming().keys().hasAll(['id', 'startDate', 'endDate', 'description', 'createdAt', 'updatedAt'])
+          && incoming().keys().size() == 6
+          && incoming().id == vacationId
+          && incoming().startDate is string
+          && incoming().endDate is string
+          && incoming().description is string
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+          
+        allow delete: if isOwner(userId) && isValidId(vacationId);
+      }
     }
   }
 }

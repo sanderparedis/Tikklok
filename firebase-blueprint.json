@@ -52,6 +52,20 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "date", "type"]
+    },
+    "VacationPeriod": {
+      "title": "Vacation Period",
+      "description": "A manually entered long vacation period where no work is expected.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "startDate": { "type": "string", "format": "date" },
+        "endDate": { "type": "string", "format": "date" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "startDate", "endDate", "description"]
     }
   },
   "firestore": {
@@ -66,6 +80,10 @@
     "/users/{userId}/freeDays/{dayId}": {
       "schema": "FreeDay",
       "description": "Free days history for a user."
+    },
+    "/users/{userId}/vacationPeriods/{vacationId}": {
+      "schema": "VacationPeriod",
+      "description": "Vacation periods history for a user."
     },
     "/users/{userId}": {
       "schema": "UserTimer",
