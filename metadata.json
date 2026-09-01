@@ -1,6 +1,8 @@
 {
   "name": "WerkTijd Tracker",
-  "description": "Een intuïtieve applicatie voor het bijhouden van werkuren, pauzes en verplaatsingsvergoedingen.",
+  "description": "Een intuïtieve applicatie voor het bijhouden van werkuren (ICT-coördinatie & lesopdracht), overuren en verplaatsingsvergoedingen.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

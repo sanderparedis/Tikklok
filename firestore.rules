@@ -32,12 +32,14 @@ service cloud.firestore {
 
     function isValidWorkEntry(data) {
       return data.keys().hasAll(['id', 'date', 'startTime', 'endTime', 'breakTime', 'createdAt', 'updatedAt'])
-        && data.keys().size() == 7
+        && data.keys().size() <= 9
         && data.id is string && data.id.size() <= 128
         && data.date is string && data.date.size() == 10
         && data.startTime is string && data.startTime.size() == 5
         && data.endTime is string && data.endTime.size() == 5
         && data.breakTime is number
+        && (!('category' in data) || data.category in ['ict', 'teaching'])
+        && (!('description' in data) || (data.description is string && data.description.size() <= 500))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -56,9 +58,9 @@ service cloud.firestore {
 
     function isValidUserTimer(data) {
       return data.keys().hasAll(['isActive', 'startTime'])
-        && data.keys().size() >= 2
         && data.isActive is bool
-        && (data.startTime == null || data.startTime is number);
+        && (data.startTime == null || data.startTime is number)
+        && (!('category' in data) || data.category == null || data.category in ['ict', 'teaching']);
     }
 
     function isValidFreeDay(data) {
@@ -81,7 +83,7 @@ service cloud.firestore {
       
       allow update: if isOwner(userId) 
         && isValidUserTimer(incoming())
-        && incoming().diff(existing()).affectedKeys().hasOnly(['isActive', 'startTime']);
+        && incoming().diff(existing()).affectedKeys().hasOnly(['isActive', 'startTime', 'category']);
 
       // Work Entries
       match /workEntries/{entryId} {
@@ -100,7 +102,7 @@ service cloud.firestore {
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time
           && (
-            incoming().diff(existing()).affectedKeys().hasOnly(['date', 'startTime', 'endTime', 'breakTime', 'updatedAt'])
+            incoming().diff(existing()).affectedKeys().hasOnly(['date', 'startTime', 'endTime', 'breakTime', 'category', 'description', 'updatedAt'])
           );
           
         allow delete: if isOwner(userId) && isValidId(entryId);

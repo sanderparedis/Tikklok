@@ -2,7 +2,7 @@
   "entities": {
     "WorkEntry": {
       "title": "Work Entry",
-      "description": "A record of time worked on a specific date.",
+      "description": "A record of time worked on a specific date, categorized into ICT or Teaching.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -10,6 +10,8 @@
         "startTime": { "type": "string", "description": "HH:mm format" },
         "endTime": { "type": "string", "description": "HH:mm format" },
         "breakTime": { "type": "number", "description": "Break time in minutes" },
+        "category": { "type": "string", "enum": ["ict", "teaching"], "description": "Work category" },
+        "description": { "type": "string", "description": "Optional description of activity" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
