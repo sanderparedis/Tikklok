@@ -94,9 +94,13 @@ export const getSchoolYearForDate = (dateStr: string): string => {
   }
 };
 
+export const ADMINISTRATIVE_TARGET_MIN = 25 * 60 + 43; // 1543 min (15/21 van 36u = 25u 43m)
+export const TEACHING_GUIDELINE_MIN = 10 * 60 + 17; // 617 min (6/21 van 36u = 10u 17m)
+export const TOTAL_WEEK_NORM_MIN = 36 * 60; // 2160 min (21/21 = 36u 00m)
+
 export const getBaseTargetForSchoolYear = (schoolYear?: string): number => {
-  // Streefdoel is in totaal 36 uur per week (2160 minuten) ongeacht lestijd of ICT
-  return 36 * 60; // 2160 minutes
+  // Optie C: enkel de administratieve uren (15/21 van 36u = 25u 43m) zijn officieel voor overuren
+  return ADMINISTRATIVE_TARGET_MIN;
 };
 
 export const formatWeekLabel = (mondayStr: string): string => {
@@ -132,10 +136,10 @@ export const calculateWeekTarget = (
 
     if (isFree || isVacation || isSummer) {
       const dayOfWeek = d.getDay(); // 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri
-      if (dayOfWeek === 3) { // Wednesday is 4 hours
-        reductionMin += 4 * 60;
-      } else { // Mon, Tue, Thu, Fri are 8 hours
-        reductionMin += 8 * 60;
+      if (dayOfWeek === 3) { // Woensdag (4h norm * 15/21 = 171 min)
+        reductionMin += 171;
+      } else { // Ma, Di, Do, Vr (8h norm * 15/21 = 343 min)
+        reductionMin += 343;
       }
       
       if (isSummer) {
@@ -163,6 +167,7 @@ export const CATEGORY_CONFIG: Record<WorkCategory, {
   badgeBorder: string;
   accentColor: string;
   description: string;
+  isOfficial: boolean;
 }> = {
   ict: {
     label: 'ICT-coördinatie',
@@ -171,7 +176,8 @@ export const CATEGORY_CONFIG: Record<WorkCategory, {
     badgeText: 'text-sky-700 dark:text-sky-300',
     badgeBorder: 'border-sky-200 dark:border-sky-800',
     accentColor: '#00638A',
-    description: 'ICT-coördinatie taken & infrastructuur • Telt mee voor weekdoel 36u'
+    description: 'Administratief (15/21 • norm 25u 43m) • Telt mee voor overuren',
+    isOfficial: true
   },
   teaching: {
     label: 'Lesopdracht',
@@ -180,6 +186,7 @@ export const CATEGORY_CONFIG: Record<WorkCategory, {
     badgeText: 'text-purple-700 dark:text-purple-300',
     badgeBorder: 'border-purple-200 dark:border-purple-800',
     accentColor: '#7C3AED',
-    description: '6 lesuren (50 min) & lesvoorbereidingen • Telt mee voor weekdoel 36u'
+    description: '6 lesuren (50 min) & voorbereiding • Eigen administratie (geen overuren)',
+    isOfficial: false
   }
 };

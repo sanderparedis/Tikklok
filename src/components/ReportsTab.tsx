@@ -116,10 +116,10 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
           <div>
             <h2 className="text-base font-bold text-[var(--text-main)] flex items-center gap-2">
               <Calendar className="w-4 h-4 text-brand-primary" />
-              <span>Laatste 3 Weken: Streefdoel 36u & Overuren</span>
+              <span>Laatste 3 Weken: Administratieve Overuren (15/21)</span>
             </h2>
             <p className="text-xs text-[var(--text-muted)] mt-0.5">
-              Totaal gewerkte uren (ICT + Lesopdracht) t.o.v. het weekdoel (36u) & overurensaldo
+              Overuren berekend op basis van de 15/21 ICT-opdracht (norm 25u 43m). Lesopdracht (6/21) geregistreerd voor eigen administratie.
             </p>
           </div>
         </div>
@@ -148,22 +148,22 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                 </div>
 
                 <div className="space-y-2 text-xs pt-1 border-t border-[var(--panel-border)]">
-                  {/* Total worked */}
-                  <div className="flex justify-between items-center text-[var(--text-main)] font-semibold">
-                    <span>Totaal Gewerkt:</span>
-                    <span className="font-mono font-bold text-brand-primary">{formatMonoTime(week.workedTotalMin)}</span>
+                  {/* ICT worked */}
+                  <div className="flex justify-between items-center text-sky-800 dark:text-sky-300 font-semibold">
+                    <span>ICT Gewerkt (15/21):</span>
+                    <span className="font-mono font-bold text-sky-700 dark:text-sky-300">{formatMonoTime(week.workedIctMin)}</span>
                   </div>
 
                   {/* Target */}
                   <div className="flex justify-between items-center text-[var(--text-muted)]">
-                    <span>Streefdoel:</span>
+                    <span>ICT Streefdoel:</span>
                     <span className="font-mono">{formatMonoTime(week.targetMin)}</span>
                   </div>
 
                   {/* Saldo */}
                   <div className="flex justify-between items-center pt-1 border-t border-[var(--panel-border)]/60">
                     <span className="font-semibold text-slate-700 dark:text-slate-300">Overuren Saldo:</span>
-                    {idx === 0 && week.workedTotalMin < week.targetMin ? (
+                    {idx === 0 && week.workedIctMin < week.targetMin ? (
                       <span className="font-mono font-bold text-slate-500 dark:text-slate-400">
                         +00:00 <span className="text-[10px] font-normal">(in opbouw)</span>
                       </span>
@@ -175,9 +175,13 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                   </div>
 
                   {/* Categories breakdown */}
-                  <div className="pt-2 border-t border-[var(--panel-border)]/50 flex justify-between items-center text-[11px] text-[var(--text-muted)]">
-                    <span className="text-sky-700 dark:text-sky-300">ICT: {formatMonoTime(week.workedIctMin)}</span>
-                    <span className="text-purple-700 dark:text-purple-300">Les: {formatMonoTime(week.workedTeachingMin)}</span>
+                  <div className="pt-2 border-t border-[var(--panel-border)]/50 flex justify-between items-center text-[11px]">
+                    <span className="text-purple-700 dark:text-purple-300 font-medium">
+                      Les (eigen admin): <strong>{formatMonoTime(week.workedTeachingMin)}</strong>
+                    </span>
+                    <span className="text-[var(--text-muted)] font-mono">
+                      Totaal: {formatMonoTime(week.workedTotalMin)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -195,7 +199,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
               <span>Schooljaren Overzicht & Overuren Snapshots</span>
             </h2>
             <p className="text-xs text-[var(--text-muted)] mt-0.5">
-              Historiek per schooljaar (snapshot 30 juni). Streefdoel 36u/week (ICT + Lesopdracht).
+              Overurensaldo berekend op basis van de 15/21 ICT-opdracht (norm 25u 43m/wk). Lesopdracht (6/21) blijft bijgehouden voor eigen administratie.
             </p>
           </div>
         </div>
@@ -237,7 +241,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                         )}
                       </div>
                       <div className="text-xs text-[var(--text-muted)] mt-0.5">
-                        Basis weeknorm: <strong className="text-[var(--text-main)]">{baseHoursStr}</strong> • Totaal gewerkt: <strong className="text-brand-primary">{formatMinutes(sy.totalWorkedAll)}</strong>
+                        ICT weeknorm: <strong className="text-[var(--text-main)]">{baseHoursStr} (15/21)</strong> • Totaal gewerkt: <strong className="text-brand-primary">{formatMinutes(sy.totalWorkedAll)}</strong>
                       </div>
                     </div>
                   </div>
@@ -247,7 +251,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                     {/* Overuren Saldo */}
                     <div className="text-left sm:text-right">
                       <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--text-muted)]">
-                        Overuren ({sy.schoolYear})
+                        Overuren Saldo (15/21)
                       </div>
                       <div className={`font-mono font-bold text-sm ${isOvertimePos ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
                         {isOvertimePos ? `+${formatMonoTime(sy.overtimeBalance)}` : formatMonoTime(sy.overtimeBalance)}
@@ -260,7 +264,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                         ICT: {formatMinutes(sy.totalWorkedIct)}
                       </div>
                       <div className="text-purple-700 dark:text-purple-300 font-semibold">
-                        Les: {formatMinutes(sy.totalWorkedTeaching)}
+                        Les (eigen): {formatMinutes(sy.totalWorkedTeaching)}
                       </div>
                     </div>
                   </div>
@@ -272,30 +276,31 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                     {/* Quick Stats Grid for Year */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div className="p-3 rounded-xl bg-[var(--panel-bg)] border border-[var(--panel-border)]">
-                        <div className="label-tiny">Totaal Gewerkt</div>
-                        <div className="font-mono font-bold text-sm text-brand-primary">
-                          {formatMinutes(sy.totalWorkedAll)}
-                        </div>
-                      </div>
-
-                      <div className="p-3 rounded-xl bg-[var(--panel-bg)] border border-[var(--panel-border)]">
-                        <div className="label-tiny">Streefdoel Uren</div>
-                        <div className="font-mono font-bold text-sm text-[var(--text-main)]">
-                          {formatMinutes(sy.totalTargetMin)}
-                        </div>
-                      </div>
-
-                      <div className="p-3 rounded-xl bg-[var(--panel-bg)] border border-[var(--panel-border)]">
-                        <div className="label-tiny">ICT Gewerkt</div>
+                        <div className="label-tiny">ICT Gewerkt (15/21)</div>
                         <div className="font-mono font-bold text-sm text-sky-700 dark:text-sky-300">
                           {formatMinutes(sy.totalWorkedIct)}
                         </div>
                       </div>
 
                       <div className="p-3 rounded-xl bg-[var(--panel-bg)] border border-[var(--panel-border)]">
-                        <div className="label-tiny">Lesopdracht Gewerkt</div>
+                        <div className="label-tiny">ICT Streefdoel</div>
+                        <div className="font-mono font-bold text-sm text-[var(--text-main)]">
+                          {formatMinutes(sy.totalTargetMin)}
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-[var(--panel-bg)] border border-[var(--panel-border)]">
+                        <div className="label-tiny">Lesopdracht (6/21)</div>
                         <div className="font-mono font-bold text-sm text-purple-700 dark:text-purple-300">
                           {formatMinutes(sy.totalWorkedTeaching)}
+                        </div>
+                        <div className="text-[10px] text-[var(--text-muted)]">Eigen admin</div>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-[var(--panel-bg)] border border-[var(--panel-border)]">
+                        <div className="label-tiny">Totaal Alle Werk</div>
+                        <div className="font-mono font-bold text-sm text-brand-primary">
+                          {formatMinutes(sy.totalWorkedAll)}
                         </div>
                       </div>
                     </div>
@@ -306,11 +311,11 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                         <thead className="bg-slate-100/80 dark:bg-slate-800/80 text-[var(--text-muted)] font-semibold border-b border-[var(--panel-border)]">
                           <tr>
                             <th className="p-3">Week</th>
+                            <th className="p-3 text-sky-700 dark:text-sky-300">ICT Gewerkt (15/21)</th>
+                            <th className="p-3">ICT Doel</th>
+                            <th className="p-3">Overuren Saldo</th>
+                            <th className="p-3 text-purple-700 dark:text-purple-300">Lesopdracht (6/21 - eigen admin)</th>
                             <th className="p-3">Totaal Gewerkt</th>
-                            <th className="p-3">Streefdoel</th>
-                            <th className="p-3">Saldo</th>
-                            <th className="p-3 text-sky-700 dark:text-sky-300">ICT</th>
-                            <th className="p-3 text-purple-700 dark:text-purple-300">Lesopdracht</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--panel-border)]">
@@ -326,8 +331,8 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                                     </span>
                                   )}
                                 </td>
-                                <td className="p-3 font-mono font-bold text-brand-primary">
-                                  {formatMonoTime(w.workedTotal)}
+                                <td className="p-3 font-mono font-bold text-sky-700 dark:text-sky-300">
+                                  {formatMonoTime(w.workedIct)}
                                 </td>
                                 <td className="p-3 font-mono text-[var(--text-muted)]">
                                   {formatMonoTime(w.targetMin)}
@@ -335,11 +340,11 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                                 <td className={`p-3 font-mono font-bold ${isWeekPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
                                   {isWeekPos ? `+${formatMonoTime(w.balanceMin)}` : formatMonoTime(w.balanceMin)}
                                 </td>
-                                <td className="p-3 font-mono text-sky-700 dark:text-sky-300">
-                                  {formatMonoTime(w.workedIct)}
-                                </td>
                                 <td className="p-3 font-mono text-purple-700 dark:text-purple-300">
                                   {formatMonoTime(w.workedTeaching)}
+                                </td>
+                                <td className="p-3 font-mono font-semibold text-brand-primary">
+                                  {formatMonoTime(w.workedTotal)}
                                 </td>
                               </tr>
                             );

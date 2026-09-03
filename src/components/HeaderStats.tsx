@@ -15,8 +15,9 @@ interface HeaderStatsProps {
   ictWorkedMin: number;
   teachingWorkedMin: number;
   overtimeBalance: number;
-  totalKm: number;
-  totalTravelComp: number;
+  currentMonthKm: number;
+  currentMonthTravelComp: number;
+  currentMonthName: string;
 }
 
 export const HeaderStats: React.FC<HeaderStatsProps> = ({
@@ -31,8 +32,9 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
   ictWorkedMin,
   teachingWorkedMin,
   overtimeBalance,
-  totalKm,
-  totalTravelComp
+  currentMonthKm,
+  currentMonthTravelComp,
+  currentMonthName
 }) => {
   const isOvertimePositive = overtimeBalance >= 0;
 
@@ -52,7 +54,7 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
               </span>
             </h1>
             <p className="text-xs text-[var(--text-muted)]">
-              Tijdregistratie met uitsplitsing ICT-coördinatie & Lesopdracht • Streefdoel 36u / week
+              Administratief (15/21: norm 25u 43m officieel voor overuren) • Lesopdracht (6/21: eigen administratie)
             </p>
           </div>
         </div>
@@ -108,10 +110,10 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-        {/* Weekdoel */}
+        {/* Weekdoel ICT */}
         <div className="card-panel p-4 flex flex-col justify-between">
           <div className="flex items-center justify-between text-brand-primary mb-2">
-            <span className="label-tiny !mb-0 text-brand-primary font-semibold">Streefdoel (wk)</span>
+            <span className="label-tiny !mb-0 text-brand-primary font-semibold">ICT Weekdoel (15/21)</span>
             <Clock className="w-4 h-4 opacity-80" />
           </div>
           <div>
@@ -119,28 +121,28 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
               {formatMonoTime(targetMin)}
             </div>
             <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              Norm: 36u 00m / week
+              Norm: 25u 43m / week
             </div>
           </div>
         </div>
 
-        {/* Totaal Gewerkt (deze week) */}
+        {/* ICT Gewerkt (deze week) */}
         <div className="card-panel p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-brand-primary mb-2">
-            <span className="label-tiny !mb-0 text-brand-primary font-semibold">Totaal Gewerkt (wk)</span>
-            <Sparkles className="w-4 h-4 opacity-80" />
+          <div className="flex items-center justify-between text-sky-600 dark:text-sky-400 mb-2">
+            <span className="label-tiny !mb-0 text-sky-700 dark:text-sky-300 font-semibold">ICT Gewerkt (wk)</span>
+            <Briefcase className="w-4 h-4 opacity-80" />
           </div>
           <div>
-            <div className="text-xl sm:text-2xl font-bold font-mono text-brand-primary">
-              {formatMonoTime(totalWorkedMin)}
+            <div className="text-xl sm:text-2xl font-bold font-mono text-sky-700 dark:text-sky-300">
+              {formatMonoTime(ictWorkedMin)}
             </div>
             <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              {targetMin > 0 ? `${Math.round((totalWorkedMin / targetMin) * 100)}% van streefdoel` : 'Vrije week'}
+              {targetMin > 0 ? `${Math.round((ictWorkedMin / targetMin) * 100)}% • Officiële uren` : 'Vrije week'}
             </div>
           </div>
         </div>
 
-        {/* Overurensaldo */}
+        {/* Overurensaldo (ICT) */}
         <div className="card-panel p-4 flex flex-col justify-between">
           <div className="flex items-center justify-between mb-2">
             <span className="label-tiny !mb-0 font-semibold text-slate-700 dark:text-slate-300">Overuren ({schoolYear})</span>
@@ -151,45 +153,41 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
               {isOvertimePositive ? `+${formatMonoTime(overtimeBalance)}` : formatMonoTime(overtimeBalance)}
             </div>
             <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              {isOvertimePositive ? 'Positief saldo' : 'Inhaalsaldo'}
+              {isOvertimePositive ? 'Positief saldo (15/21)' : 'Inhaalsaldo (15/21)'}
             </div>
           </div>
         </div>
 
-        {/* Uitsplitsing Categorieën */}
+        {/* Lesopdracht (6/21) - Eigen Administratie */}
         <div className="card-panel p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-600 dark:text-slate-300 mb-2">
-            <span className="label-tiny !mb-0 font-semibold text-slate-700 dark:text-slate-300">Opdeling (wk)</span>
-            <Briefcase className="w-4 h-4 opacity-80 text-sky-600" />
+          <div className="flex items-center justify-between text-purple-600 dark:text-purple-400 mb-2">
+            <span className="label-tiny !mb-0 text-purple-700 dark:text-purple-300 font-semibold">Lesopdracht (6/21)</span>
+            <GraduationCap className="w-4 h-4 opacity-80" />
           </div>
-          <div className="space-y-1">
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-sky-700 dark:text-sky-300 flex items-center gap-1 font-semibold">
-                <span className="w-2 h-2 rounded-full bg-sky-500 inline-block" /> ICT:
-              </span>
-              <span className="font-mono font-bold text-sky-700 dark:text-sky-300">{formatMonoTime(ictWorkedMin)}</span>
+          <div>
+            <div className="text-xl sm:text-2xl font-bold font-mono text-purple-700 dark:text-purple-300">
+              {formatMonoTime(teachingWorkedMin)}
             </div>
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-purple-700 dark:text-purple-300 flex items-center gap-1 font-semibold">
-                <span className="w-2 h-2 rounded-full bg-purple-500 inline-block" /> Les:
-              </span>
-              <span className="font-mono font-bold text-purple-700 dark:text-purple-300">{formatMonoTime(teachingWorkedMin)}</span>
+            <div className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">
+              Eigen admin • Richtwaarde 10u 17m
             </div>
           </div>
         </div>
 
-        {/* KM & Vergoeding */}
+        {/* KM & Vergoeding (Huidige Maand) */}
         <div className="card-panel p-4 flex flex-col justify-between col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 mb-2">
-            <span className="label-tiny !mb-0 text-emerald-700 dark:text-emerald-300 font-semibold">Verplaatsing</span>
+            <span className="label-tiny !mb-0 text-emerald-700 dark:text-emerald-300 font-semibold capitalize">
+              Verplaatsing ({currentMonthName})
+            </span>
             <Car className="w-4 h-4 opacity-80" />
           </div>
           <div>
-            <div className="text-xl sm:text-2xl font-bold text-[var(--text-main)]">
-              € {totalTravelComp.toFixed(2)}
+            <div className="text-xl sm:text-2xl font-bold text-[var(--text-main)] font-mono">
+              € {currentMonthTravelComp.toFixed(2)}
             </div>
             <div className="text-[11px] text-[var(--text-muted)] mt-0.5 font-mono">
-              {totalKm.toFixed(1)} km (auto €0,4285)
+              {currentMonthKm.toFixed(1)} km ({currentMonthName})
             </div>
           </div>
         </div>

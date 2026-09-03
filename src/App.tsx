@@ -279,14 +279,18 @@ export default function App() {
     return { currentWeekIctMin: Math.round(ict), currentWeekTeachingMin: Math.round(teaching) };
   }, [currentMondayStr, workEntries, timer.isActive, timer.category, liveMinutes]);
 
-  // Travel totals
-  const totalKm = useMemo(() => {
-    return travelEntries.reduce((acc, t) => acc + t.distance, 0);
-  }, [travelEntries]);
+  // Travel totals for the current month (displayed in header KPI card)
+  const currentMonthKey = useMemo(() => defaultToday.substring(0, 7), [defaultToday]);
+  const currentMonthName = useMemo(() => {
+    return new Date().toLocaleDateString('nl', { month: 'long' });
+  }, []);
 
-  const totalTravelComp = useMemo(() => {
-    return travelEntries.reduce((acc, t) => acc + (t.distance * TRANSPORT_RATES[t.type]), 0);
-  }, [travelEntries]);
+  const { currentMonthKm, currentMonthTravelComp } = useMemo(() => {
+    const monthEntries = travelEntries.filter(t => t.date.startsWith(currentMonthKey));
+    const km = monthEntries.reduce((acc, t) => acc + t.distance, 0);
+    const comp = monthEntries.reduce((acc, t) => acc + (t.distance * TRANSPORT_RATES[t.type]), 0);
+    return { currentMonthKm: km, currentMonthTravelComp: comp };
+  }, [travelEntries, currentMonthKey]);
 
   // Aggregate School Years Data
   const schoolYearsData: SchoolYearData[] = useMemo(() => {
@@ -357,7 +361,8 @@ export default function App() {
           const workedIct = Math.round(wIct);
           const workedTeaching = Math.round(wTeaching);
           const workedTotal = workedIct + workedTeaching;
-          const balanceMin = workedTotal - targetInfo.targetMin;
+          // Optie C: enkel de administratieve uren (ICT 15/21) tellen mee voor de overurenbalans
+          const balanceMin = workedIct - targetInfo.targetMin;
 
           totalWorkedIct += workedIct;
           totalWorkedTeaching += workedTeaching;
@@ -387,16 +392,16 @@ export default function App() {
 
         const totalWorkedAll = totalWorkedIct + totalWorkedTeaching;
         
-        // For the current active school year: start at 0 (clean slate on Sep 1) + completed weeks + current week surplus
+        // For the current active school year: start at 0 (clean slate on Sep 1) + completed weeks + current week surplus in ICT
         let overtimeBalance: number;
         if (isCurrent) {
           const currentWeekData = weeks.find(w => w.weekKey === currentMondayStr);
-          const currentWeekSurplus = currentWeekData && currentWeekData.workedTotal > currentWeekData.targetMin
-            ? currentWeekData.workedTotal - currentWeekData.targetMin
+          const currentWeekSurplus = currentWeekData && currentWeekData.workedIct > currentWeekData.targetMin
+            ? currentWeekData.workedIct - currentWeekData.targetMin
             : 0;
           overtimeBalance = completedWeeksOvertime + currentWeekSurplus;
         } else {
-          overtimeBalance = totalWorkedAll - totalTargetMin;
+          overtimeBalance = totalWorkedIct - totalTargetMin;
         }
 
         const weeksCount = weeks.length;
@@ -467,7 +472,8 @@ export default function App() {
       const workedIctMin = Math.round(wIct);
       const workedTeachingMin = Math.round(wTeaching);
       const workedTotalMin = workedIctMin + workedTeachingMin;
-      const balanceMin = workedTotalMin - targetInfo.targetMin;
+      // Optie C: enkel de administratieve uren (ICT 15/21) bepalen het overurensaldo
+      const balanceMin = workedIctMin - targetInfo.targetMin;
 
       const startLabel = curMon.toLocaleDateString('nl', { day: 'numeric', month: 'short' });
       const endLabel = friday.toLocaleDateString('nl', { day: 'numeric', month: 'short' });
@@ -768,7 +774,7 @@ export default function App() {
   };
 
   const progressPercent = currentWeekTargetInfo.targetMin > 0
-    ? (currentWeekTotalMin / currentWeekTargetInfo.targetMin) * 100
+    ? (currentWeekIctMin / currentWeekTargetInfo.targetMin) * 100
     : 0;
 
   if (loading) {
@@ -795,8 +801,9 @@ export default function App() {
           ictWorkedMin={currentWeekIctMin}
           teachingWorkedMin={currentWeekTeachingMin}
           overtimeBalance={currentOvertimeBalance}
-          totalKm={totalKm}
-          totalTravelComp={totalTravelComp}
+          currentMonthKm={currentMonthKm}
+          currentMonthTravelComp={currentMonthTravelComp}
+          currentMonthName={currentMonthName}
         />
 
         {/* Tab Navigation Navigation Bar */}

@@ -61,27 +61,27 @@ export const HoursTab: React.FC<HoursTabProps> = ({
       <div className="card-panel p-5 bg-gradient-to-br from-[var(--panel-bg)] to-slate-50 dark:to-slate-900/40">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
           <div>
-            <span className="label-tiny">Voortgang Weekdoel (Totaal 36u)</span>
+            <span className="label-tiny">Voortgang Administratieve Uren (ICT-coördinatie - 15/21)</span>
             <div className="text-lg font-bold text-[var(--text-main)] flex items-center gap-2 flex-wrap">
-              <span>{formatMinutes(currentWeekTotalMin)}</span>
+              <span className="text-sky-700 dark:text-sky-300 font-mono">{formatMinutes(currentWeekIctMin)}</span>
               <span className="text-sm font-normal text-[var(--text-muted)]">
-                van {formatMinutes(currentTargetMinutes)} doel
+                van {formatMinutes(currentTargetMinutes)} doel (15/21)
               </span>
-              {currentWeekTotalMin > currentTargetMinutes && (
+              {currentWeekIctMin > currentTargetMinutes && (
                 <span className="text-xs px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold">
-                  +{formatMinutes(currentWeekTotalMin - currentTargetMinutes)} overuren
+                  +{formatMinutes(currentWeekIctMin - currentTargetMinutes)} overuren
                 </span>
               )}
             </div>
           </div>
           <div className="flex items-center gap-4 text-xs font-semibold">
-            <div className="flex items-center gap-1 text-sky-700 dark:text-sky-300">
-              <Briefcase className="w-4 h-4" />
-              <span>ICT: <strong>{formatMinutes(currentWeekIctMin)}</strong></span>
-            </div>
-            <div className="flex items-center gap-1 text-purple-700 dark:text-purple-300">
+            <div className="flex items-center gap-1.5 text-purple-700 dark:text-purple-300">
               <GraduationCap className="w-4 h-4" />
-              <span>Les: <strong>{formatMinutes(currentWeekTeachingMin)}</strong></span>
+              <span>Lesopdracht: <strong>{formatMinutes(currentWeekTeachingMin)}</strong></span>
+              <span className="text-[10px] font-normal text-[var(--text-muted)]">(eigen admin)</span>
+            </div>
+            <div className="hidden sm:flex items-center gap-1 text-[var(--text-muted)] pl-2 border-l border-[var(--panel-border)]">
+              <span>Totaal: <strong className="text-[var(--text-main)]">{formatMinutes(currentWeekTotalMin)}</strong></span>
             </div>
           </div>
         </div>
@@ -95,7 +95,7 @@ export const HoursTab: React.FC<HoursTabProps> = ({
         </div>
         <div className="flex justify-between text-[11px] text-[var(--text-muted)] mt-1.5">
           <span>0u</span>
-          <span>{Math.round(progressPercent)}% voltooid</span>
+          <span>{Math.round(progressPercent)}% voltooid (ICT)</span>
           <span>{formatMinutes(currentTargetMinutes)}</span>
         </div>
       </div>
@@ -221,10 +221,10 @@ export const HoursTab: React.FC<HoursTabProps> = ({
                 >
                   <div className="flex items-center gap-2 font-semibold text-xs text-sky-700 dark:text-sky-300 mb-0.5">
                     <Briefcase className="w-3.5 h-3.5" />
-                    <span>ICT-coördinatie</span>
+                    <span>ICT-coördinatie (15/21)</span>
                   </div>
                   <div className="text-[10px] text-[var(--text-muted)]">
-                    ICT & Netwerk • Telt mee voor 36u
+                    Administratief • Telt mee voor overuren
                   </div>
                 </button>
 
@@ -239,10 +239,10 @@ export const HoursTab: React.FC<HoursTabProps> = ({
                 >
                   <div className="flex items-center gap-2 font-semibold text-xs text-purple-700 dark:text-purple-300 mb-0.5">
                     <GraduationCap className="w-3.5 h-3.5" />
-                    <span>Lesopdracht</span>
+                    <span>Lesopdracht (6/21)</span>
                   </div>
                   <div className="text-[10px] text-[var(--text-muted)]">
-                    6 lesuren (50m) + voorbereiding
+                    6 lesuren (50m) • Eigen administratie
                   </div>
                 </button>
               </div>

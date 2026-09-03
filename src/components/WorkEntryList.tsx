@@ -167,8 +167,8 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
                           onChange={(e) => setEditValues({ ...editValues, category: e.target.value as WorkCategory })}
                           className="input-field text-xs py-2"
                         >
-                          <option value="ict">ICT-coördinatie (25:45)</option>
-                          <option value="teaching">Lesopdracht</option>
+                          <option value="ict">ICT-coördinatie (15/21 • overuren)</option>
+                          <option value="teaching">Lesopdracht (6/21 • eigen admin)</option>
                         </select>
                       </div>
                       <div>
