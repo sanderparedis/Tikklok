@@ -1,4 +1,4 @@
-import { TransportType, FreeDay, VacationPeriod, WorkCategory } from '../types';
+import { TransportType, FreeDay, VacationPeriod, WorkCategory, UserScheduleConfig } from '../types';
 
 export const TRANSPORT_RATES: Record<TransportType, number> = {
   auto: 0.4285,
@@ -94,13 +94,122 @@ export const getSchoolYearForDate = (dateStr: string): string => {
   }
 };
 
-export const ADMINISTRATIVE_TARGET_MIN = 25 * 60 + 43; // 1543 min (15/21 van 36u = 25u 43m)
-export const TEACHING_GUIDELINE_MIN = 10 * 60 + 17; // 617 min (6/21 van 36u = 10u 17m)
-export const TOTAL_WEEK_NORM_MIN = 36 * 60; // 2160 min (21/21 = 36u 00m)
+export interface DaySchedule {
+  dayOfWeek: number; // 1 = Maandag, 2 = Dinsdag, 3 = Woensdag, 4 = Donderdag, 5 = Vrijdag
+  dayName: string;
+  totalNormMin: number; // 8u = 480 min, 4u = 240 min (geschaald naar 36u week)
+  teachingLessons: number; // Aantal lesuren op deze dag
+  teachingMin: number; // Minuten lesopdracht (incl. voorbereiding/evaluatie)
+  ictMin: number; // Resterende ICT-minuten op deze dag
+}
 
-export const getBaseTargetForSchoolYear = (schoolYear?: string): number => {
-  // Optie C: enkel de administratieve uren (15/21 van 36u = 25u 43m) zijn officieel voor overuren
-  return ADMINISTRATIVE_TARGET_MIN;
+export const DEFAULT_SCHEDULE_CONFIG: UserScheduleConfig = {
+  adminNumerator: 15,
+  teachingNumerator: 6,
+  denominator: 21,
+  fulltimeWeekHours: 36,
+  teachingLessonsPerDay: { 1: 4, 2: 0, 3: 2, 4: 0, 5: 0 }
+};
+
+export interface ScheduleDetails {
+  adminNumerator: number;
+  teachingNumerator: number;
+  denominator: number;
+  fulltimeWeekHours: number;
+  adminTargetMin: number;
+  teachingTargetMin: number;
+  totalTargetMin: number;
+  totalLessons: number;
+  minPerLesson: number;
+  daySchedules: Record<number, DaySchedule>;
+  fractionLabel: string;
+  teachingFractionLabel: string;
+}
+
+export const computeScheduleDetails = (config?: Partial<UserScheduleConfig>): ScheduleDetails => {
+  const adminNum = Number(config?.adminNumerator ?? 15);
+  const teachingNum = Number(config?.teachingNumerator ?? 6);
+  const denom = Number(config?.denominator ?? 21);
+  const fulltimeHours = Number(config?.fulltimeWeekHours ?? 36);
+
+  const adminNumerator = !isNaN(adminNum) && adminNum >= 0 ? adminNum : 15;
+  const teachingNumerator = !isNaN(teachingNum) && teachingNum >= 0 ? teachingNum : 6;
+  const denominator = !isNaN(denom) && denom > 0 ? denom : 21;
+  const fulltimeWeekHours = !isNaN(fulltimeHours) && fulltimeHours > 0 ? fulltimeHours : 36;
+
+  const rawLessons = config?.teachingLessonsPerDay || { 1: 4, 2: 0, 3: 2, 4: 0, 5: 0 };
+  const teachingLessonsPerDay: Record<number, number> = {
+    1: Number(rawLessons[1] ?? 0),
+    2: Number(rawLessons[2] ?? 0),
+    3: Number(rawLessons[3] ?? 0),
+    4: Number(rawLessons[4] ?? 0),
+    5: Number(rawLessons[5] ?? 0)
+  };
+
+  // Berekening normuren in minuten
+  const adminTargetMin = Math.round((adminNumerator / denominator) * fulltimeWeekHours * 60);
+  const teachingTargetMin = Math.round((teachingNumerator / denominator) * fulltimeWeekHours * 60);
+  const totalTargetMin = adminTargetMin + teachingTargetMin;
+
+  // Som lesuren over de week
+  const totalLessons = [1, 2, 3, 4, 5].reduce((sum, d) => sum + (teachingLessonsPerDay[d] || 0), 0);
+  const effectiveLessons = totalLessons > 0 ? totalLessons : (teachingNumerator > 0 ? teachingNumerator : 0);
+  const minPerLesson = effectiveLessons > 0 ? teachingTargetMin / effectiveLessons : 0;
+
+  // Dagschema normen: in een 36u week is ma/di/do/vr 8u (480m) en woensdag 4u (240m)
+  const scale = fulltimeWeekHours / 36;
+  const fullDayNorm = Math.round(480 * scale);
+  const halfDayNorm = Math.round(240 * scale);
+
+  const dayNames: Record<number, string> = {
+    1: 'Maandag',
+    2: 'Dinsdag',
+    3: 'Woensdag',
+    4: 'Donderdag',
+    5: 'Vrijdag'
+  };
+
+  const daySchedules: Record<number, DaySchedule> = {};
+
+  for (let d = 1; d <= 5; d++) {
+    const isWednesday = d === 3;
+    const totalNormMin = isWednesday ? halfDayNorm : fullDayNorm;
+    const lessons = teachingLessonsPerDay[d] || 0;
+    const teachingMin = Math.min(totalNormMin, Math.round(lessons * minPerLesson));
+    const ictMin = Math.max(0, totalNormMin - teachingMin);
+
+    daySchedules[d] = {
+      dayOfWeek: d,
+      dayName: dayNames[d],
+      totalNormMin,
+      teachingLessons: lessons,
+      teachingMin,
+      ictMin
+    };
+  }
+
+  return {
+    adminNumerator,
+    teachingNumerator,
+    denominator,
+    fulltimeWeekHours,
+    adminTargetMin,
+    teachingTargetMin,
+    totalTargetMin,
+    totalLessons,
+    minPerLesson,
+    daySchedules,
+    fractionLabel: `${adminNumerator}/${denominator}`,
+    teachingFractionLabel: `${teachingNumerator}/${denominator}`
+  };
+};
+
+export const ADMINISTRATIVE_TARGET_MIN = 25 * 60 + 43; // 1543 min (default 15/21 van 36u)
+export const TEACHING_GUIDELINE_MIN = 10 * 60 + 17; // 617 min (default 6/21 van 36u)
+export const TOTAL_WEEK_NORM_MIN = 36 * 60; // 2160 min (default 21/21 = 36u)
+
+export const getBaseTargetForSchoolYear = (schoolYear?: string, config?: UserScheduleConfig): number => {
+  return computeScheduleDetails(config).adminTargetMin;
 };
 
 export const formatWeekLabel = (mondayStr: string): string => {
@@ -115,15 +224,29 @@ export const formatWeekLabel = (mondayStr: string): string => {
 export const calculateWeekTarget = (
   mondayStr: string, 
   freeDays: FreeDay[], 
-  vacationPeriods: VacationPeriod[]
-): { targetMin: number; baseTargetMin: number; reductionMin: number; freeDaysCount: number; summerDaysCount: number } => {
-  const mon = new Date(mondayStr + 'T00:00:00');
-  const schoolYear = getSchoolYearForDate(mondayStr);
-  const baseTargetMin = getBaseTargetForSchoolYear(schoolYear);
+  vacationPeriods: VacationPeriod[],
+  userConfig?: UserScheduleConfig
+): {
+  targetMin: number;
+  baseTargetMin: number;
+  reductionMin: number;
+  teachingTargetMin: number;
+  teachingBaseMin: number;
+  teachingReductionMin: number;
+  freeDaysCount: number;
+  summerDaysCount: number;
+} => {
+  const details = computeScheduleDetails(userConfig);
+  const baseTargetMin = details.adminTargetMin;
+  const teachingBaseMin = details.teachingTargetMin;
+  const daySchedules = details.daySchedules;
 
   let reductionMin = 0;
+  let teachingReductionMin = 0;
   let freeDaysCount = 0;
   let summerDaysCount = 0;
+
+  const mon = new Date(mondayStr + 'T00:00:00');
 
   for (let i = 0; i < 5; i++) {
     const d = new Date(mon);
@@ -136,10 +259,10 @@ export const calculateWeekTarget = (
 
     if (isFree || isVacation || isSummer) {
       const dayOfWeek = d.getDay(); // 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri
-      if (dayOfWeek === 3) { // Woensdag (4h norm * 15/21 = 171 min)
-        reductionMin += 171;
-      } else { // Ma, Di, Do, Vr (8h norm * 15/21 = 343 min)
-        reductionMin += 343;
+      const schedule = daySchedules[dayOfWeek];
+      if (schedule) {
+        reductionMin += schedule.ictMin;
+        teachingReductionMin += schedule.teachingMin;
       }
       
       if (isSummer) {
@@ -154,6 +277,9 @@ export const calculateWeekTarget = (
     targetMin: Math.max(0, baseTargetMin - reductionMin),
     baseTargetMin,
     reductionMin,
+    teachingTargetMin: Math.max(0, teachingBaseMin - teachingReductionMin),
+    teachingBaseMin,
+    teachingReductionMin,
     freeDaysCount,
     summerDaysCount
   };

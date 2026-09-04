@@ -1,6 +1,6 @@
 {
-  "name": "WerkTijd Tracker",
-  "description": "Een intuïtieve applicatie voor het bijhouden van werkuren (ICT-coördinatie & lesopdracht), overuren en verplaatsingsvergoedingen.",
+  "name": "Tikklok Mosa-RT",
+  "description": "Een intuïtieve applicatie voor het bijhouden van werkuren (ICT-coördinatie & lesopdracht), overuren en verplaatsingsvergoedingen voor Mosa-RT.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

@@ -29,7 +29,8 @@ import {
   TimerState, 
   WorkCategory,
   SchoolYearData,
-  SchoolYearWeekData
+  SchoolYearWeekData,
+  UserScheduleConfig
 } from './types';
 import { 
   calculateDuration, 
@@ -38,7 +39,8 @@ import {
   getBaseTargetForSchoolYear, 
   toLocalYYYYMMDD, 
   isSummerDate,
-  TRANSPORT_RATES
+  TRANSPORT_RATES,
+  DEFAULT_SCHEDULE_CONFIG
 } from './utils/calculations';
 
 import { HeaderStats } from './components/HeaderStats';
@@ -46,6 +48,7 @@ import { HoursTab } from './components/HoursTab';
 import { WorkEntryList } from './components/WorkEntryList';
 import { TravelTab } from './components/TravelTab';
 import { ReportsTab } from './components/ReportsTab';
+import { ScheduleConfigModal } from './components/ScheduleConfigModal';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -57,6 +60,22 @@ export default function App() {
   const [travelEntries, setTravelEntries] = useState<TravelEntry[]>([]);
   const [freeDays, setFreeDays] = useState<FreeDay[]>([]);
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
+  
+  // User Schedule Configuration (Verdeelsleutel & Rooster)
+  const [scheduleConfig, setScheduleConfig] = useState<UserScheduleConfig>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem('mosa_schedule_config');
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch {
+          // fallback to default
+        }
+      }
+    }
+    return DEFAULT_SCHEDULE_CONFIG;
+  });
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   
   // Timer State
   const [timer, setTimer] = useState<TimerState>({
@@ -215,6 +234,61 @@ export default function App() {
     });
   }, [user]);
 
+  // Sync Schedule Settings from Firestore
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    const settingsRef = doc(db, 'users', user.uid, 'settings', 'schedule');
+    return onSnapshot(settingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const d = snapshot.data();
+        const loaded: UserScheduleConfig = {
+          adminNumerator: typeof d.adminNumerator === 'number' ? d.adminNumerator : DEFAULT_SCHEDULE_CONFIG.adminNumerator,
+          teachingNumerator: typeof d.teachingNumerator === 'number' ? d.teachingNumerator : DEFAULT_SCHEDULE_CONFIG.teachingNumerator,
+          denominator: typeof d.denominator === 'number' ? d.denominator : DEFAULT_SCHEDULE_CONFIG.denominator,
+          fulltimeWeekHours: typeof d.fulltimeWeekHours === 'number' ? d.fulltimeWeekHours : DEFAULT_SCHEDULE_CONFIG.fulltimeWeekHours,
+          teachingLessonsPerDay: d.teachingLessonsPerDay || DEFAULT_SCHEDULE_CONFIG.teachingLessonsPerDay,
+          updatedAt: d.updatedAt || undefined
+        };
+        setScheduleConfig(loaded);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`mosa_schedule_config_${user.uid}`, JSON.stringify(loaded));
+          localStorage.setItem('mosa_schedule_config', JSON.stringify(loaded));
+        }
+      }
+    }, (error) => {
+      if (error.code !== 'permission-denied') {
+        handleFirestoreError(error, OperationType.GET, `users/${user.uid}/settings/schedule`);
+      }
+    });
+  }, [user]);
+
+  const handleSaveScheduleConfig = async (newConfig: UserScheduleConfig) => {
+    setScheduleConfig(newConfig);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('mosa_schedule_config', JSON.stringify(newConfig));
+    }
+    if (user) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`mosa_schedule_config_${user.uid}`, JSON.stringify(newConfig));
+      }
+      try {
+        const settingsRef = doc(db, 'users', user.uid, 'settings', 'schedule');
+        await setDoc(settingsRef, {
+          adminNumerator: newConfig.adminNumerator,
+          teachingNumerator: newConfig.teachingNumerator,
+          denominator: newConfig.denominator,
+          fulltimeWeekHours: newConfig.fulltimeWeekHours,
+          teachingLessonsPerDay: newConfig.teachingLessonsPerDay,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/settings/schedule`);
+      }
+    }
+  };
+
   // Live Timer Interval
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -244,8 +318,8 @@ export default function App() {
 
   // Calculate current week target for ICT
   const currentWeekTargetInfo = useMemo(() => {
-    return calculateWeekTarget(currentMondayStr, freeDays, vacationPeriods);
-  }, [currentMondayStr, freeDays, vacationPeriods]);
+    return calculateWeekTarget(currentMondayStr, freeDays, vacationPeriods, scheduleConfig);
+  }, [currentMondayStr, freeDays, vacationPeriods, scheduleConfig]);
 
   // Current week work minutes (ICT vs Teaching)
   const { currentWeekIctMin, currentWeekTeachingMin } = useMemo(() => {
@@ -333,7 +407,7 @@ export default function App() {
       .sort((a, b) => b.localeCompare(a))
       .map(sy => {
         const isCurrent = sy === currentSchoolYear;
-        const baseWeeklyTargetMin = getBaseTargetForSchoolYear(sy);
+        const baseWeeklyTargetMin = getBaseTargetForSchoolYear(sy, scheduleConfig);
         const weekKeys = Object.keys(syMap[sy].weeks).sort((a, b) => b.localeCompare(a));
 
         let totalWorkedIct = 0;
@@ -344,7 +418,7 @@ export default function App() {
 
         const weeks: SchoolYearWeekData[] = weekKeys.map(monStr => {
           const wData = syMap[sy].weeks[monStr];
-          const targetInfo = calculateWeekTarget(monStr, freeDays, vacationPeriods);
+          const targetInfo = calculateWeekTarget(monStr, freeDays, vacationPeriods, scheduleConfig);
           
           let wIct = wData.ict;
           let wTeaching = wData.teaching;
@@ -426,7 +500,7 @@ export default function App() {
       });
 
     return result;
-  }, [workEntries, currentSchoolYear, currentMondayStr, freeDays, vacationPeriods, timer.isActive, timer.category, liveMinutes]);
+  }, [workEntries, currentSchoolYear, currentMondayStr, freeDays, vacationPeriods, timer.isActive, timer.category, liveMinutes, scheduleConfig]);
 
   const currentYearData = schoolYearsData.find(s => s.schoolYear === currentSchoolYear);
   const currentOvertimeBalance = currentYearData?.overtimeBalance || 0;
@@ -442,7 +516,7 @@ export default function App() {
       curMon.setDate(mon.getDate() - (i * 7));
       const monStr = toLocalYYYYMMDD(curMon);
 
-      const targetInfo = calculateWeekTarget(monStr, freeDays, vacationPeriods);
+      const targetInfo = calculateWeekTarget(monStr, freeDays, vacationPeriods, scheduleConfig);
       const friday = new Date(curMon);
       friday.setDate(curMon.getDate() + 4);
       const friStr = toLocalYYYYMMDD(friday);
@@ -472,7 +546,7 @@ export default function App() {
       const workedIctMin = Math.round(wIct);
       const workedTeachingMin = Math.round(wTeaching);
       const workedTotalMin = workedIctMin + workedTeachingMin;
-      // Optie C: enkel de administratieve uren (ICT 15/21) bepalen het overurensaldo
+      // Optie C: enkel de administratieve uren (ICT verdeelsleutel) bepalen het overurensaldo
       const balanceMin = workedIctMin - targetInfo.targetMin;
 
       const startLabel = curMon.toLocaleDateString('nl', { day: 'numeric', month: 'short' });
@@ -491,7 +565,7 @@ export default function App() {
     }
 
     return list;
-  }, [currentMondayStr, freeDays, vacationPeriods, workEntries, timer.isActive, timer.category, liveMinutes]);
+  }, [currentMondayStr, freeDays, vacationPeriods, workEntries, timer.isActive, timer.category, liveMinutes, scheduleConfig]);
 
   // Monthly aggregated data
   const monthlyData = useMemo(() => {
@@ -797,6 +871,8 @@ export default function App() {
           onLogout={logout}
           schoolYear={currentSchoolYear}
           targetMin={currentWeekTargetInfo.targetMin}
+          reductionMin={currentWeekTargetInfo.reductionMin}
+          teachingTargetMin={currentWeekTargetInfo.teachingTargetMin}
           totalWorkedMin={currentWeekTotalMin}
           ictWorkedMin={currentWeekIctMin}
           teachingWorkedMin={currentWeekTeachingMin}
@@ -804,6 +880,8 @@ export default function App() {
           currentMonthKm={currentMonthKm}
           currentMonthTravelComp={currentMonthTravelComp}
           currentMonthName={currentMonthName}
+          scheduleConfig={scheduleConfig}
+          onOpenScheduleConfig={() => setIsScheduleModalOpen(true)}
         />
 
         {/* Tab Navigation Navigation Bar */}
@@ -863,6 +941,8 @@ export default function App() {
                 onAddFreeDay={handleAddFreeDay}
                 onAddVacationPeriod={handleAddVacationPeriod}
                 defaultDate={defaultToday}
+                scheduleConfig={scheduleConfig}
+                onOpenScheduleConfig={() => setIsScheduleModalOpen(true)}
               />
 
               <WorkEntryList
@@ -893,9 +973,18 @@ export default function App() {
               lastThreeWeeks={lastThreeWeeks}
               workEntries={workEntries}
               travelEntries={travelEntries}
+              scheduleConfig={scheduleConfig}
             />
           )}
         </div>
+
+        {/* Customizable Schedule & Allocation Modal */}
+        <ScheduleConfigModal
+          isOpen={isScheduleModalOpen}
+          onClose={() => setIsScheduleModalOpen(false)}
+          config={scheduleConfig}
+          onSave={handleSaveScheduleConfig}
+        />
       </div>
     </div>
   );

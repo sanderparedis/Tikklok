@@ -13,8 +13,8 @@ import {
   Tag, 
   FileText 
 } from 'lucide-react';
-import { WorkCategory, FreeDayType, TimerState } from '../types';
-import { formatTimer, formatMinutes, formatMonoTime, CATEGORY_CONFIG, toLocalYYYYMMDD } from '../utils/calculations';
+import { WorkCategory, FreeDayType, TimerState, UserScheduleConfig } from '../types';
+import { formatTimer, formatMinutes, formatMonoTime, CATEGORY_CONFIG, toLocalYYYYMMDD, computeScheduleDetails } from '../utils/calculations';
 
 interface HoursTabProps {
   timer: TimerState;
@@ -30,6 +30,8 @@ interface HoursTabProps {
   onAddFreeDay: (e: React.FormEvent<HTMLFormElement>) => void;
   onAddVacationPeriod: (e: React.FormEvent<HTMLFormElement>) => void;
   defaultDate: string;
+  scheduleConfig?: UserScheduleConfig;
+  onOpenScheduleConfig?: () => void;
 }
 
 export const HoursTab: React.FC<HoursTabProps> = ({
@@ -46,6 +48,8 @@ export const HoursTab: React.FC<HoursTabProps> = ({
   onAddFreeDay,
   onAddVacationPeriod,
   defaultDate,
+  scheduleConfig,
+  onOpenScheduleConfig
 }) => {
   // Local state for selecting category before starting timer
   const [timerCategory, setTimerCategory] = useState<WorkCategory>('ict');
@@ -54,6 +58,7 @@ export const HoursTab: React.FC<HoursTabProps> = ({
 
   const activeCategory = timer.category || timerCategory;
   const activeConfig = CATEGORY_CONFIG[activeCategory];
+  const schedule = computeScheduleDetails(scheduleConfig);
 
   return (
     <div className="space-y-6">
@@ -61,11 +66,22 @@ export const HoursTab: React.FC<HoursTabProps> = ({
       <div className="card-panel p-5 bg-gradient-to-br from-[var(--panel-bg)] to-slate-50 dark:to-slate-900/40">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
           <div>
-            <span className="label-tiny">Voortgang Administratieve Uren (ICT-coördinatie - 15/21)</span>
+            <div className="flex items-center gap-2">
+              <span className="label-tiny">Voortgang Administratieve Uren (ICT-coördinatie - {schedule.fractionLabel})</span>
+              {onOpenScheduleConfig && (
+                <button
+                  type="button"
+                  onClick={onOpenScheduleConfig}
+                  className="text-[10px] text-brand-primary hover:underline font-semibold -mt-1.5"
+                >
+                  Wijzig verdeelsleutel
+                </button>
+              )}
+            </div>
             <div className="text-lg font-bold text-[var(--text-main)] flex items-center gap-2 flex-wrap">
               <span className="text-sky-700 dark:text-sky-300 font-mono">{formatMinutes(currentWeekIctMin)}</span>
               <span className="text-sm font-normal text-[var(--text-muted)]">
-                van {formatMinutes(currentTargetMinutes)} doel (15/21)
+                van {formatMinutes(currentTargetMinutes)} doel ({schedule.fractionLabel})
               </span>
               {currentWeekIctMin > currentTargetMinutes && (
                 <span className="text-xs px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold">
@@ -75,11 +91,13 @@ export const HoursTab: React.FC<HoursTabProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-4 text-xs font-semibold">
-            <div className="flex items-center gap-1.5 text-purple-700 dark:text-purple-300">
-              <GraduationCap className="w-4 h-4" />
-              <span>Lesopdracht: <strong>{formatMinutes(currentWeekTeachingMin)}</strong></span>
-              <span className="text-[10px] font-normal text-[var(--text-muted)]">(eigen admin)</span>
-            </div>
+            {schedule.teachingNumerator > 0 && (
+              <div className="flex items-center gap-1.5 text-purple-700 dark:text-purple-300">
+                <GraduationCap className="w-4 h-4" />
+                <span>Lesopdracht ({schedule.teachingFractionLabel}): <strong>{formatMinutes(currentWeekTeachingMin)}</strong></span>
+                <span className="text-[10px] font-normal text-[var(--text-muted)]">(eigen admin)</span>
+              </div>
+            )}
             <div className="hidden sm:flex items-center gap-1 text-[var(--text-muted)] pl-2 border-l border-[var(--panel-border)]">
               <span>Totaal: <strong className="text-[var(--text-main)]">{formatMinutes(currentWeekTotalMin)}</strong></span>
             </div>
@@ -286,17 +304,17 @@ export const HoursTab: React.FC<HoursTabProps> = ({
 
             {/* Optional description */}
             <div>
-              <label className="label-tiny">Omschrijving / Notitie (optioneel)</label>
-              <div className="relative">
-                <FileText className="w-4 h-4 absolute left-3 top-3 text-[var(--text-muted)]" />
-                <input
-                  type="text"
-                  name="description"
-                  placeholder={manualCategory === 'ict' ? "bijv. Netwerkonderhoud, Chromebook uitrol, ticketing" : "bijv. Les 3B informatica, lesvoorbereiding, evaluatie"}
-                  className="input-field pl-9"
-                  maxLength={150}
-                />
-              </div>
+              <label className="label-tiny flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-brand-primary" />
+                <span>Omschrijving / Notitie (optioneel)</span>
+              </label>
+              <input
+                type="text"
+                name="description"
+                placeholder={manualCategory === 'ict' ? "bijv. Netwerkonderhoud, Chromebook uitrol, ticketing" : "bijv. Les 3B informatica, lesvoorbereiding, evaluatie"}
+                className="input-field"
+                maxLength={150}
+              />
             </div>
 
             <button type="submit" className="btn-primary w-full flex items-center justify-center gap-2">

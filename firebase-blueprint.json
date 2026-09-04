@@ -68,9 +68,27 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "startDate", "endDate", "description"]
+    },
+    "UserSettings": {
+      "title": "User Schedule Settings",
+      "description": "User specific appointment breakdown and weekly teaching schedule.",
+      "type": "object",
+      "properties": {
+        "adminNumerator": { "type": "number", "description": "ICT appointment hours numerator" },
+        "teachingNumerator": { "type": "number", "description": "Teaching appointment hours numerator" },
+        "denominator": { "type": "number", "description": "Full-time denominator hours (e.g. 21)" },
+        "fulltimeWeekHours": { "type": "number", "description": "Weekly norm hours (e.g. 36)" },
+        "teachingLessonsPerDay": { "type": "object", "description": "Map of weekday to teaching lessons" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["adminNumerator", "teachingNumerator", "denominator", "fulltimeWeekHours"]
     }
   },
   "firestore": {
+    "/users/{userId}/settings/{settingId}": {
+      "schema": "UserSettings",
+      "description": "User custom schedule and distribution settings."
+    },
     "/users/{userId}/workEntries/{entryId}": {
       "schema": "WorkEntry",
       "description": "Work history for a user."

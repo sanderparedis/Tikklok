@@ -75,3 +75,13 @@ export interface SchoolYearData {
   baseWeeklyTargetMin: number;
   weeks: SchoolYearWeekData[];
 }
+
+export interface UserScheduleConfig {
+  adminNumerator: number; // e.g. 15
+  teachingNumerator: number; // e.g. 6
+  denominator: number; // e.g. 21
+  fulltimeWeekHours: number; // e.g. 36
+  teachingLessonsPerDay: Record<number, number>; // 1: 4, 2: 0, 3: 2, 4: 0, 5: 0
+  updatedAt?: any;
+}
+

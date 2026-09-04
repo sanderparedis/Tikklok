@@ -172,6 +172,13 @@ service cloud.firestore {
           
         allow delete: if isOwner(userId) && isValidId(vacationId);
       }
+
+      // User Settings / Schedule Config
+      match /settings/{settingId} {
+        allow list, get: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(settingId);
+        allow delete: if isOwner(userId) && isValidId(settingId);
+      }
     }
   }
 }
