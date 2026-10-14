@@ -14,7 +14,7 @@ import {
   Info 
 } from 'lucide-react';
 import { SchoolYearData, WorkEntry, TravelEntry, UserScheduleConfig } from '../types';
-import { formatMinutes, formatMonoTime, formatWeekLabel, computeScheduleDetails } from '../utils/calculations';
+import { formatMinutes, formatMonoTime, formatWeekLabel, computeScheduleDetails, TRANSPORT_RATES } from '../utils/calculations';
 import * as XLSX from 'xlsx';
 
 interface MonthlyReportItem {
@@ -90,9 +90,9 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
     const travelData = travelEntries.map(t => ({
       'Datum': t.date,
       'Traject / Omschrijving': t.description,
-      'Vervoertype': t.type === 'auto' ? 'Auto (€0.4285/km)' : 'Fiets (€0.21/km)',
+      'Vervoertype': t.type === 'auto' ? `Auto (€ ${TRANSPORT_RATES.auto}/km)` : `Fiets (€ ${TRANSPORT_RATES.fiets}/km)`,
       'Afstand (km)': t.distance,
-      'Vergoeding (€)': Number((t.distance * (t.type === 'auto' ? 0.4285 : 0.21)).toFixed(2))
+      'Vergoeding (€)': Number((t.distance * TRANSPORT_RATES[t.type]).toFixed(2))
     }));
     const wsTravel = XLSX.utils.json_to_sheet(travelData);
     XLSX.utils.book_append_sheet(wb, wsTravel, 'Verplaatsingen');

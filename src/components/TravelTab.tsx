@@ -52,7 +52,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
             € {totalComp.toFixed(2)}
           </div>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Auto (€{TRANSPORT_RATES.auto}/km) • Fiets (€{TRANSPORT_RATES.fiets}/km)
+            Auto (€ 0,4285/km) • Fiets (€ 0,21/km)
           </p>
         </div>
       </div>
@@ -80,7 +80,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
                 }`}
               >
                 <Car className="w-4 h-4" />
-                <span>Auto (€{TRANSPORT_RATES.auto} / km)</span>
+                <span>Auto (€ 0,4285 / km)</span>
               </button>
 
               <button
@@ -93,7 +93,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
                 }`}
               >
                 <Bike className="w-4 h-4" />
-                <span>Fiets (€{TRANSPORT_RATES.fiets} / km)</span>
+                <span>Fiets (€ 0,21 / km)</span>
               </button>
             </div>
           </div>
