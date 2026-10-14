@@ -1,7 +1,7 @@
 import { TransportType, FreeDay, VacationPeriod, WorkCategory, UserScheduleConfig } from '../types';
 
 export const TRANSPORT_RATES: Record<TransportType, number> = {
-  auto: 0.4285,
+  auto: 0.4825,
   fiets: 0.21
 };
 

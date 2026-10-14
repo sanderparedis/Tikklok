@@ -90,7 +90,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
     const travelData = travelEntries.map(t => ({
       'Datum': t.date,
       'Traject / Omschrijving': t.description,
-      'Vervoertype': t.type === 'auto' ? `Auto (€ ${TRANSPORT_RATES.auto}/km)` : `Fiets (€ ${TRANSPORT_RATES.fiets}/km)`,
+      'Vervoertype': t.type === 'auto' ? `Auto (€ ${TRANSPORT_RATES.auto.toString().replace('.', ',')}/km)` : `Fiets (€ ${TRANSPORT_RATES.fiets.toFixed(2).replace('.', ',')}/km)`,
       'Afstand (km)': t.distance,
       'Vergoeding (€)': Number((t.distance * TRANSPORT_RATES[t.type]).toFixed(2))
     }));
