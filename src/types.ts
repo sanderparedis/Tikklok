@@ -35,6 +35,7 @@ export interface FreeDay {
   id: string;
   date: string;
   type: FreeDayType;
+  description?: string;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -56,6 +57,7 @@ export interface SchoolYearWeekData {
   targetMin: number;
   reductionMin: number;
   freeDaysCount: number;
+  sickDaysCount?: number;
   summerDaysCount: number;
   balanceMin: number;
 }

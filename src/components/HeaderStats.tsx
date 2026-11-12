@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Briefcase, GraduationCap, Car, Moon, Sun, LogIn, LogOut, TrendingUp, Sliders } from 'lucide-react';
+import { Clock, Briefcase, GraduationCap, Car, Moon, Sun, LogIn, LogOut, TrendingUp, Sliders, HeartPulse } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { UserScheduleConfig } from '../types';
 import { formatMinutes, formatMonoTime, computeScheduleDetails } from '../utils/calculations';
@@ -13,6 +13,7 @@ interface HeaderStatsProps {
   schoolYear: string;
   targetMin: number;
   reductionMin?: number;
+  sickReductionMin?: number;
   teachingTargetMin?: number;
   totalWorkedMin: number;
   ictWorkedMin: number;
@@ -23,6 +24,7 @@ interface HeaderStatsProps {
   currentMonthName: string;
   scheduleConfig?: UserScheduleConfig;
   onOpenScheduleConfig?: () => void;
+  onOpenSickLeaveModal?: () => void;
 }
 
 export const HeaderStats: React.FC<HeaderStatsProps> = ({
@@ -34,6 +36,7 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
   schoolYear,
   targetMin,
   reductionMin = 0,
+  sickReductionMin = 0,
   teachingTargetMin,
   totalWorkedMin,
   ictWorkedMin,
@@ -43,7 +46,8 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
   currentMonthTravelComp,
   currentMonthName,
   scheduleConfig,
-  onOpenScheduleConfig
+  onOpenScheduleConfig,
+  onOpenSickLeaveModal
 }) => {
   const isOvertimePositive = overtimeBalance >= 0;
   const schedule = computeScheduleDetails(scheduleConfig);
@@ -71,6 +75,17 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+          {onOpenSickLeaveModal && (
+            <button
+              onClick={onOpenSickLeaveModal}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-rose-300 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors text-xs font-semibold text-rose-700 dark:text-rose-300 shadow-2xs"
+              title="Ziektedag(en) Registreren"
+            >
+              <HeartPulse className="w-3.5 h-3.5 text-rose-500" />
+              <span>Ziektedag Ingeven</span>
+            </button>
+          )}
+
           {onOpenScheduleConfig && (
             <button
               onClick={onOpenScheduleConfig}
@@ -146,7 +161,10 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
             </div>
             <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
               {reductionMin > 0 ? (
-                <span>Norm {formatMinutes(schedule.adminTargetMin)} (-{formatMinutes(reductionMin)} vrij)</span>
+                <span>
+                  Norm {formatMinutes(schedule.adminTargetMin)} (-{formatMinutes(reductionMin)}{' '}
+                  {sickReductionMin > 0 ? (reductionMin === sickReductionMin ? 'ziekte' : 'ziekte/vrij') : 'vrij'})
+                </span>
               ) : (
                 <span>Norm: {formatMinutes(schedule.adminTargetMin)} / week</span>
               )}

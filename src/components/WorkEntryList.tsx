@@ -10,7 +10,8 @@ import {
   CalendarOff, 
   Palmtree, 
   Filter, 
-  FileText 
+  FileText,
+  HeartPulse 
 } from 'lucide-react';
 import { WorkEntry, FreeDay, VacationPeriod, WorkCategory } from '../types';
 import { calculateDuration, formatMinutes, CATEGORY_CONFIG } from '../utils/calculations';
@@ -283,25 +284,76 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
         )}
       </div>
 
-      {/* Free Days & Vacation Summary Badges */}
+      {/* Free Days, Sick Days & Vacation Summary Badges */}
       {(freeDays.length > 0 || vacationPeriods.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Free days registered */}
-          {freeDays.length > 0 && (
-            <div className="card-panel p-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-3 flex items-center gap-2">
-                <CalendarOff className="w-3.5 h-3.5 text-amber-500" />
-                <span>Geregistreerde Vrije Dagen</span>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Sick Days registered */}
+          {freeDays.filter(fd => fd.type === 'ziek').length > 0 && (
+            <div className="card-panel p-4 border-rose-200/60 dark:border-rose-900/40 bg-rose-50/20 dark:bg-rose-950/10">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-rose-800 dark:text-rose-300 mb-3 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <HeartPulse className="w-3.5 h-3.5 text-rose-500" />
+                  <span>Ziektedagen</span>
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300">
+                  {freeDays.filter(fd => fd.type === 'ziek').length}
+                </span>
               </h3>
               <div className="space-y-2">
-                {freeDays.map(fd => (
-                  <div key={fd.id} className="flex items-center justify-between p-2 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/40 text-xs">
-                    <span className="font-semibold text-amber-900 dark:text-amber-200">
-                      {new Date(fd.date + 'T00:00:00').toLocaleDateString('nl', { weekday: 'short', day: 'numeric', month: 'short' })}: {fd.type}
-                    </span>
+                {freeDays.filter(fd => fd.type === 'ziek').map(fd => (
+                  <div key={fd.id} className="flex items-center justify-between p-2 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 text-xs">
+                    <div>
+                      <span className="font-semibold text-rose-900 dark:text-rose-200 block">
+                        {new Date(fd.date + 'T00:00:00').toLocaleDateString('nl', { weekday: 'short', day: 'numeric', month: 'short' })}
+                      </span>
+                      {fd.description && (
+                        <span className="text-[10px] text-rose-700 dark:text-rose-400">
+                          {fd.description}
+                        </span>
+                      )}
+                    </div>
                     <button
                       onClick={() => onDeleteFreeDay(fd.id)}
-                      className="text-amber-700 hover:text-red-600 p-1"
+                      title="Verwijder ziektedag"
+                      className="text-rose-700 hover:text-red-600 p-1 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Other Free days registered */}
+          {freeDays.filter(fd => fd.type !== 'ziek').length > 0 && (
+            <div className="card-panel p-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-3 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <CalendarOff className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Vrije Dagen & Feestdagen</span>
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+                  {freeDays.filter(fd => fd.type !== 'ziek').length}
+                </span>
+              </h3>
+              <div className="space-y-2">
+                {freeDays.filter(fd => fd.type !== 'ziek').map(fd => (
+                  <div key={fd.id} className="flex items-center justify-between p-2 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/40 text-xs">
+                    <div>
+                      <span className="font-semibold text-amber-900 dark:text-amber-200 block">
+                        {new Date(fd.date + 'T00:00:00').toLocaleDateString('nl', { weekday: 'short', day: 'numeric', month: 'short' })}: {fd.type}
+                      </span>
+                      {fd.description && (
+                        <span className="text-[10px] text-amber-700 dark:text-amber-400">
+                          {fd.description}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => onDeleteFreeDay(fd.id)}
+                      title="Verwijder vrije dag"
+                      className="text-amber-700 hover:text-red-600 p-1 transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -314,9 +366,14 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
           {/* Vacation periods registered */}
           {vacationPeriods.length > 0 && (
             <div className="card-panel p-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-3 flex items-center gap-2">
-                <Palmtree className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Geregistreerde Vakanties</span>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-3 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Palmtree className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Vakanties</span>
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                  {vacationPeriods.length}
+                </span>
               </h3>
               <div className="space-y-2">
                 {vacationPeriods.map(vp => (
@@ -329,7 +386,8 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
                     </div>
                     <button
                       onClick={() => onDeleteVacationPeriod(vp.id)}
-                      className="text-emerald-700 hover:text-red-600 p-1"
+                      title="Verwijder vakantie"
+                      className="text-emerald-700 hover:text-red-600 p-1 transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

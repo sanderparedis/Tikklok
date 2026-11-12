@@ -234,6 +234,8 @@ export const calculateWeekTarget = (
   teachingBaseMin: number;
   teachingReductionMin: number;
   freeDaysCount: number;
+  sickDaysCount: number;
+  sickReductionMin: number;
   summerDaysCount: number;
 } => {
   const details = computeScheduleDetails(userConfig);
@@ -244,6 +246,8 @@ export const calculateWeekTarget = (
   let reductionMin = 0;
   let teachingReductionMin = 0;
   let freeDaysCount = 0;
+  let sickDaysCount = 0;
+  let sickReductionMin = 0;
   let summerDaysCount = 0;
 
   const mon = new Date(mondayStr + 'T00:00:00');
@@ -253,7 +257,8 @@ export const calculateWeekTarget = (
     d.setDate(mon.getDate() + i);
     const dateStr = toLocalYYYYMMDD(d);
     
-    const isFree = freeDays.some(fd => fd.date === dateStr);
+    const matchedFreeDay = freeDays.find(fd => fd.date === dateStr);
+    const isFree = Boolean(matchedFreeDay);
     const isVacation = vacationPeriods.some(vp => dateStr >= vp.startDate && dateStr <= vp.endDate);
     const isSummer = isSummerDate(dateStr);
 
@@ -263,10 +268,15 @@ export const calculateWeekTarget = (
       if (schedule) {
         reductionMin += schedule.ictMin;
         teachingReductionMin += schedule.teachingMin;
+        if (matchedFreeDay?.type === 'ziek') {
+          sickReductionMin += schedule.ictMin;
+        }
       }
       
       if (isSummer) {
         summerDaysCount++;
+      } else if (matchedFreeDay?.type === 'ziek') {
+        sickDaysCount++;
       } else {
         freeDaysCount++;
       }
@@ -281,6 +291,8 @@ export const calculateWeekTarget = (
     teachingBaseMin,
     teachingReductionMin,
     freeDaysCount,
+    sickDaysCount,
+    sickReductionMin,
     summerDaysCount
   };
 };

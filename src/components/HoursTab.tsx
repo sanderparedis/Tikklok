@@ -11,7 +11,9 @@ import {
   Palmtree, 
   Check, 
   Tag, 
-  FileText 
+  FileText,
+  HeartPulse,
+  Stethoscope 
 } from 'lucide-react';
 import { WorkCategory, FreeDayType, TimerState, UserScheduleConfig } from '../types';
 import { formatTimer, formatMinutes, formatMonoTime, CATEGORY_CONFIG, toLocalYYYYMMDD, computeScheduleDetails } from '../utils/calculations';
@@ -32,6 +34,7 @@ interface HoursTabProps {
   defaultDate: string;
   scheduleConfig?: UserScheduleConfig;
   onOpenScheduleConfig?: () => void;
+  onOpenSickLeaveModal?: () => void;
 }
 
 export const HoursTab: React.FC<HoursTabProps> = ({
@@ -49,7 +52,8 @@ export const HoursTab: React.FC<HoursTabProps> = ({
   onAddVacationPeriod,
   defaultDate,
   scheduleConfig,
-  onOpenScheduleConfig
+  onOpenScheduleConfig,
+  onOpenSickLeaveModal
 }) => {
   // Local state for selecting category before starting timer
   const [timerCategory, setTimerCategory] = useState<WorkCategory>('ict');
@@ -90,7 +94,18 @@ export const HoursTab: React.FC<HoursTabProps> = ({
               )}
             </div>
           </div>
-          <div className="flex items-center gap-4 text-xs font-semibold">
+          <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
+            {onOpenSickLeaveModal && (
+              <button
+                type="button"
+                onClick={onOpenSickLeaveModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-300 dark:border-rose-900/60 bg-rose-50/80 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all text-xs font-semibold shadow-2xs"
+                title="Meld ziektedag of -periode"
+              >
+                <HeartPulse className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
+                <span>Ziektedag Ingeven</span>
+              </button>
+            )}
             {schedule.teachingNumerator > 0 && (
               <div className="flex items-center gap-1.5 text-purple-700 dark:text-purple-300">
                 <GraduationCap className="w-4 h-4" />
@@ -325,7 +340,7 @@ export const HoursTab: React.FC<HoursTabProps> = ({
         </div>
       </div>
 
-      {/* 3. Collapsible School Agenda / Vrije Dagen & Vakanties */}
+      {/* 3. Collapsible School Agenda / Vrije Dagen, Ziektedagen & Vakanties */}
       <div className="card-panel p-4">
         <button
           type="button"
@@ -334,20 +349,46 @@ export const HoursTab: React.FC<HoursTabProps> = ({
         >
           <div className="flex items-center gap-2 text-xs font-bold text-[var(--text-main)] uppercase tracking-wider">
             <CalendarOff className="w-4 h-4 text-brand-primary" />
-            <span>Schoolkalender, Vrije Dagen & Vakanties Configureren</span>
+            <span>Schoolkalender, Ziektedagen, Vrije Dagen & Vakanties</span>
           </div>
           <span className="text-xs text-brand-primary font-semibold">
-            {showConfigForms ? 'Verberg formulieren' : 'Beheer vrije dagen / vakanties'}
+            {showConfigForms ? 'Verberg configuratie' : 'Beheer afwezigheden / kalender'}
           </span>
         </button>
 
         {showConfigForms && (
-          <div className="mt-5 pt-4 border-t border-[var(--panel-border)] grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Vrije dag toevoegen */}
+          <div className="mt-5 pt-4 border-t border-[var(--panel-border)] grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Card 1: Ziektedag(en) */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-rose-800 dark:text-rose-300 flex items-center gap-2">
+                <HeartPulse className="w-3.5 h-3.5 text-rose-500" />
+                <span>Ziektedagen</span>
+              </h3>
+              <div className="p-4 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/40 dark:bg-rose-950/20 space-y-3 flex flex-col justify-between h-[calc(100%-2rem)]">
+                <div>
+                  <p className="text-xs text-[var(--text-muted)] mb-2">
+                    Meld een enkele ziektedag of een aaneengesloten periode. Je te presteren weeknorm wordt automatisch verminderd.
+                  </p>
+                  <div className="text-[11px] text-rose-700 dark:text-rose-300 font-medium bg-rose-100/60 dark:bg-rose-900/30 p-2 rounded-lg">
+                    Ondersteunt zowel 1 dag als periodes (van ... t/m ...) met automatische weekendfiltering.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={onOpenSickLeaveModal}
+                  className="w-full py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center justify-center gap-2"
+                >
+                  <HeartPulse className="w-4 h-4" />
+                  <span>Ziektedag Ingeven</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Card 2: Vrije dag / Feestdag toevoegen */}
             <div className="space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-2">
                 <CalendarOff className="w-3.5 h-3.5 text-amber-500" />
-                <span>Vrije Dag / Feestdag Toevoegen</span>
+                <span>Vrije Dag / Feestdag</span>
               </h3>
               <form onSubmit={onAddFreeDay} className="space-y-3 bg-slate-50 dark:bg-slate-900/40 p-3.5 rounded-xl border border-[var(--panel-border)]">
                 <div>
@@ -357,16 +398,26 @@ export const HoursTab: React.FC<HoursTabProps> = ({
                     name="date"
                     required
                     defaultValue={defaultDate}
-                    className="input-field"
+                    className="input-field text-xs"
                   />
                 </div>
                 <div>
                   <label className="label-tiny">Type</label>
-                  <select name="type" className="input-field">
+                  <select name="type" className="input-field text-xs">
                     <option value="vrije/facultatieve dag">Vrije / Facultatieve Dag</option>
                     <option value="feestdag">Feestdag</option>
-                    <option value="ziek">Ziek</option>
+                    <option value="ziek">Ziek (enkele dag)</option>
                   </select>
+                </div>
+                <div>
+                  <label className="label-tiny">Notitie (optioneel)</label>
+                  <input
+                    type="text"
+                    name="description"
+                    placeholder="bijv. Pedagogische studiedag"
+                    maxLength={200}
+                    className="input-field text-xs"
+                  />
                 </div>
                 <button type="submit" className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-colors">
                   Vrije Dag Registreren
@@ -374,11 +425,11 @@ export const HoursTab: React.FC<HoursTabProps> = ({
               </form>
             </div>
 
-            {/* Vakantieperiode toevoegen */}
+            {/* Card 3: Vakantieperiode toevoegen */}
             <div className="space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-2">
                 <Palmtree className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Vakantieperiode Toevoegen</span>
+                <span>Vakantieperiode</span>
               </h3>
               <form onSubmit={onAddVacationPeriod} className="space-y-3 bg-slate-50 dark:bg-slate-900/40 p-3.5 rounded-xl border border-[var(--panel-border)]">
                 <div className="grid grid-cols-2 gap-2">

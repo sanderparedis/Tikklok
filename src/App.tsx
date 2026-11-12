@@ -49,6 +49,8 @@ import { WorkEntryList } from './components/WorkEntryList';
 import { TravelTab } from './components/TravelTab';
 import { ReportsTab } from './components/ReportsTab';
 import { ScheduleConfigModal } from './components/ScheduleConfigModal';
+import { SickLeaveModal } from './components/SickLeaveModal';
+import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -60,6 +62,23 @@ export default function App() {
   const [travelEntries, setTravelEntries] = useState<TravelEntry[]>([]);
   const [freeDays, setFreeDays] = useState<FreeDay[]>([]);
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
+  
+  // Modals and feedback state
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [isSickModalOpen, setIsSickModalOpen] = useState(false);
+  const [toastNotification, setToastNotification] = useState<{
+    type: 'success' | 'error' | 'info';
+    message: string;
+  } | null>(null);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (!toastNotification) return;
+    const timer = setTimeout(() => {
+      setToastNotification(null);
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, [toastNotification]);
   
   // User Schedule Configuration (Verdeelsleutel & Rooster)
   const [scheduleConfig, setScheduleConfig] = useState<UserScheduleConfig>(() => {
@@ -75,7 +94,6 @@ export default function App() {
     }
     return DEFAULT_SCHEDULE_CONFIG;
   });
-  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   
   // Timer State
   const [timer, setTimer] = useState<TimerState>({
@@ -201,7 +219,8 @@ export default function App() {
         entries.push({
           id: doc.id,
           date: d.date,
-          type: d.type
+          type: d.type,
+          description: d.description
         });
       });
       setFreeDays(entries);
@@ -395,6 +414,23 @@ export default function App() {
       }
     });
 
+    // Collect all Mondays from free days (including sick days)
+    freeDays.forEach(fd => {
+      const d = new Date(fd.date + 'T00:00:00');
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      d.setDate(diff);
+      const monStr = toLocalYYYYMMDD(d);
+      const sy = getSchoolYearForDate(monStr);
+
+      if (!syMap[sy]) {
+        syMap[sy] = { weeks: {} };
+      }
+      if (!syMap[sy].weeks[monStr]) {
+        syMap[sy].weeks[monStr] = { ict: 0, teaching: 0 };
+      }
+    });
+
     // Ensure current school year exists
     if (!syMap[currentSchoolYear]) {
       syMap[currentSchoolYear] = { weeks: {} };
@@ -459,6 +495,7 @@ export default function App() {
             targetMin: targetInfo.targetMin,
             reductionMin: targetInfo.reductionMin,
             freeDaysCount: targetInfo.freeDaysCount,
+            sickDaysCount: targetInfo.sickDaysCount,
             summerDaysCount: targetInfo.summerDaysCount,
             balanceMin
           };
@@ -782,24 +819,105 @@ export default function App() {
     }
   };
 
+  const handleAddSickDays = async (data: {
+    startDate: string;
+    endDate?: string;
+    isPeriod: boolean;
+    description?: string;
+  }) => {
+    if (!user) {
+      setToastNotification({
+        type: 'error',
+        message: 'Meld je eerst aan met je Google-account om ziektedagen op te slaan.'
+      });
+      return;
+    }
+
+    try {
+      const datesToRegister: string[] = [];
+      if (!data.isPeriod || !data.endDate || data.startDate === data.endDate) {
+        datesToRegister.push(data.startDate);
+      } else {
+        const cur = new Date(data.startDate + 'T00:00:00');
+        const end = new Date(data.endDate + 'T00:00:00');
+        let count = 0;
+        while (cur <= end && count < 60) {
+          count++;
+          const dayOfWeek = cur.getDay();
+          if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+            datesToRegister.push(toLocalYYYYMMDD(cur));
+          }
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+
+      if (datesToRegister.length === 0) {
+        setToastNotification({
+          type: 'error',
+          message: 'Geen schooldagen (ma-vr) gevonden in de geselecteerde periode.'
+        });
+        return;
+      }
+
+      const batchPromises = datesToRegister.map(async (dateStr) => {
+        const existing = freeDays.find(fd => fd.date === dateStr && fd.type === 'ziek');
+        if (existing) return;
+        const id = crypto.randomUUID();
+        const payload: any = {
+          id,
+          date: dateStr,
+          type: 'ziek',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        };
+        if (data.description?.trim()) {
+          payload.description = data.description.trim();
+        }
+        return setDoc(doc(db, 'users', user.uid, 'freeDays', id), payload);
+      });
+
+      await Promise.all(batchPromises);
+      setToastNotification({
+        type: 'success',
+        message: `${datesToRegister.length} ${datesToRegister.length === 1 ? 'ziektedag' : 'ziektedagen'} succesvol geregistreerd!`
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/freeDays`);
+    }
+  };
+
   const handleAddFreeDay = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user) {
+      setToastNotification({
+        type: 'error',
+        message: 'Meld je eerst aan met je Google-account om vrije dagen op te slaan.'
+      });
+      return;
+    }
     const form = e.currentTarget;
     const formData = new FormData(form);
     const id = crypto.randomUUID();
+    const desc = (formData.get('description') as string)?.trim() || undefined;
 
-    const newEntry = {
+    const newEntry: any = {
       id,
       date: formData.get('date') as string,
       type: formData.get('type') as any,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
+    if (desc) {
+      newEntry.description = desc;
+    }
 
     try {
       await setDoc(doc(db, 'users', user.uid, 'freeDays', id), newEntry);
       form.reset();
+      setToastNotification({
+        type: 'success',
+        message: 'Vrije dag / afwezigheid succesvol geregistreerd!'
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/freeDays/${id}`);
     }
@@ -809,6 +927,10 @@ export default function App() {
     if (!user) return;
     try {
       await deleteDoc(doc(db, 'users', user.uid, 'freeDays', id));
+      setToastNotification({
+        type: 'info',
+        message: 'Item succesvol verwijderd.'
+      });
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/freeDays/${id}`);
     }
@@ -816,7 +938,13 @@ export default function App() {
 
   const handleAddVacationPeriod = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user) {
+      setToastNotification({
+        type: 'error',
+        message: 'Meld je eerst aan met je Google-account om vakanties op te slaan.'
+      });
+      return;
+    }
     const form = e.currentTarget;
     const formData = new FormData(form);
     const id = crypto.randomUUID();
@@ -833,6 +961,10 @@ export default function App() {
     try {
       await setDoc(doc(db, 'users', user.uid, 'vacationPeriods', id), newEntry);
       form.reset();
+      setToastNotification({
+        type: 'success',
+        message: 'Vakantieperiode succesvol opgeslagen!'
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/vacationPeriods/${id}`);
     }
@@ -872,6 +1004,7 @@ export default function App() {
           schoolYear={currentSchoolYear}
           targetMin={currentWeekTargetInfo.targetMin}
           reductionMin={currentWeekTargetInfo.reductionMin}
+          sickReductionMin={currentWeekTargetInfo.sickReductionMin}
           teachingTargetMin={currentWeekTargetInfo.teachingTargetMin}
           totalWorkedMin={currentWeekTotalMin}
           ictWorkedMin={currentWeekIctMin}
@@ -882,6 +1015,7 @@ export default function App() {
           currentMonthName={currentMonthName}
           scheduleConfig={scheduleConfig}
           onOpenScheduleConfig={() => setIsScheduleModalOpen(true)}
+          onOpenSickLeaveModal={() => setIsSickModalOpen(true)}
         />
 
         {/* Tab Navigation Navigation Bar */}
@@ -943,6 +1077,7 @@ export default function App() {
                 defaultDate={defaultToday}
                 scheduleConfig={scheduleConfig}
                 onOpenScheduleConfig={() => setIsScheduleModalOpen(true)}
+                onOpenSickLeaveModal={() => setIsSickModalOpen(true)}
               />
 
               <WorkEntryList
@@ -985,6 +1120,36 @@ export default function App() {
           config={scheduleConfig}
           onSave={handleSaveScheduleConfig}
         />
+
+        {/* Dedicated Sick Leave Modal */}
+        <SickLeaveModal
+          isOpen={isSickModalOpen}
+          onClose={() => setIsSickModalOpen(false)}
+          onSaveSickDays={handleAddSickDays}
+          defaultDate={defaultToday}
+          scheduleConfig={scheduleConfig}
+        />
+
+        {/* Floating Toast Notification */}
+        {toastNotification && (
+          <div className={`fixed bottom-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-xl border backdrop-blur-md animate-fadeIn text-xs font-semibold max-w-md transition-all ${
+            toastNotification.type === 'success'
+              ? 'bg-emerald-50/95 dark:bg-emerald-950/90 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100'
+              : toastNotification.type === 'error'
+              ? 'bg-red-50/95 dark:bg-red-950/90 border-red-300 dark:border-red-800 text-red-900 dark:text-red-100'
+              : 'bg-sky-50/95 dark:bg-sky-950/90 border-sky-300 dark:border-sky-800 text-sky-900 dark:text-sky-100'
+          }`}>
+            {toastNotification.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
+            {toastNotification.type === 'error' && <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />}
+            <span className="flex-1">{toastNotification.message}</span>
+            <button
+              onClick={() => setToastNotification(null)}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 ml-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

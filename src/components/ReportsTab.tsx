@@ -329,11 +329,16 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                               <tr key={w.weekKey} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                                 <td className="p-3 font-medium text-[var(--text-main)]">
                                   {formatWeekLabel(w.weekKey)}
-                                  {w.freeDaysCount > 0 && (
-                                    <span className="ml-1.5 text-[10px] text-amber-600 dark:text-amber-400">
-                                      ({w.freeDaysCount} vrije dag)
+                                  {w.sickDaysCount && w.sickDaysCount > 0 ? (
+                                    <span className="ml-1.5 text-[10px] text-rose-600 dark:text-rose-400 font-semibold">
+                                      ({w.sickDaysCount} {w.sickDaysCount === 1 ? 'ziektedag' : 'ziektedagen'})
                                     </span>
-                                  )}
+                                  ) : null}
+                                  {w.freeDaysCount > 0 ? (
+                                    <span className="ml-1.5 text-[10px] text-amber-600 dark:text-amber-400">
+                                      ({w.freeDaysCount} {w.freeDaysCount === 1 ? 'vrije dag' : 'vrije dagen'})
+                                    </span>
+                                  ) : null}
                                 </td>
                                 <td className="p-3 font-mono font-bold text-sky-700 dark:text-sky-300">
                                   {formatMonoTime(w.workedIct)}

@@ -50,6 +50,7 @@
         "id": { "type": "string" },
         "date": { "type": "string", "format": "date" },
         "type": { "type": "string", "enum": ["vrije/facultatieve dag", "ziek", "feestdag"] },
+        "description": { "type": "string", "maxLength": 200, "description": "Optional note or reason" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },

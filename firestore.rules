@@ -65,10 +65,11 @@ service cloud.firestore {
 
     function isValidFreeDay(data) {
       return data.keys().hasAll(['id', 'date', 'type', 'createdAt', 'updatedAt'])
-        && data.keys().size() == 5
+        && data.keys().size() <= 6
         && data.id is string && data.id.size() <= 128
         && data.date is string && data.date.size() == 10
         && data.type in ['vrije/facultatieve dag', 'ziek', 'feestdag']
+        && (!('description' in data) || (data.description is string && data.description.size() <= 200))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -148,7 +149,7 @@ service cloud.firestore {
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time
           && (
-            incoming().diff(existing()).affectedKeys().hasOnly(['date', 'type', 'updatedAt'])
+            incoming().diff(existing()).affectedKeys().hasOnly(['date', 'type', 'description', 'updatedAt'])
           );
           
         allow delete: if isOwner(userId) && isValidId(dayId);
