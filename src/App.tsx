@@ -56,6 +56,13 @@ import { TravelTab } from './components/TravelTab';
 import { ReportsTab } from './components/ReportsTab';
 import { ScheduleConfigModal } from './components/ScheduleConfigModal';
 import { SickLeaveModal } from './components/SickLeaveModal';
+import { TimerCard } from './components/TimerCard';
+
+const TABS: { id: TabType; short: string; long: string; icon: typeof Clock }[] = [
+  { id: 'hours', short: 'Uren', long: 'Tijdregistratie', icon: Clock },
+  { id: 'travel', short: 'Ritten', long: 'Verplaatsingen', icon: Car },
+  { id: 'reports', short: 'Rapport', long: 'Overuren & Rapporten', icon: BarChart3 }
+];
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 export default function App() {
@@ -390,7 +397,7 @@ export default function App() {
   // Travel totals for the current month (displayed in header KPI card)
   const currentMonthKey = useMemo(() => defaultToday.substring(0, 7), [defaultToday]);
   const currentMonthName = useMemo(() => {
-    return new Date(defaultToday + 'T00:00:00').toLocaleDateString('nl', { month: 'long' });
+    return new Date(defaultToday + 'T00:00:00').toLocaleDateString('nl-BE', { month: 'long' });
   }, [defaultToday]);
 
   const { currentMonthKm, currentMonthTravelComp } = useMemo(() => {
@@ -640,7 +647,7 @@ export default function App() {
       if (!monthsMap[monthKey]) {
         const d = new Date(e.date + 'T00:00:00');
         monthsMap[monthKey] = {
-          label: d.toLocaleDateString('nl', { month: 'long', year: 'numeric' }),
+          label: d.toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' }),
           ictMin: 0,
           teachingMin: 0,
           totalWorkMin: 0,
@@ -668,7 +675,7 @@ export default function App() {
       if (!monthsMap[monthKey]) {
         const d = new Date(t.date + 'T00:00:00');
         monthsMap[monthKey] = {
-          label: d.toLocaleDateString('nl', { month: 'long', year: 'numeric' }),
+          label: d.toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' }),
           ictMin: 0,
           teachingMin: 0,
           totalWorkMin: 0,
@@ -1077,7 +1084,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--app-bg)] text-[var(--text-main)] py-6 sm:py-10 px-4 sm:px-6">
+    <div className="min-h-screen bg-[var(--app-bg)] text-[var(--text-main)] py-4 sm:py-10 px-4 sm:px-6 overflow-x-hidden">
       <div className="max-w-6xl mx-auto">
         {/* Top Header & Stats */}
         <HeaderStats
@@ -1105,54 +1112,63 @@ export default function App() {
           scheduleConfig={scheduleConfig}
           onOpenScheduleConfig={() => setIsScheduleModalOpen(true)}
           onOpenSickLeaveModal={() => setIsSickModalOpen(true)}
+          timerSlot={
+            <TimerCard
+              timer={timer}
+              liveMinutes={liveMinutes}
+              onStartTimer={handleStartTimer}
+              onStopTimer={handleStopTimer}
+            />
+          }
         />
 
-        {/* Tab Navigation Navigation Bar */}
-        <div className="flex items-center gap-2 mb-6 border-b border-[var(--panel-border)] pb-2 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('hours')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shrink-0 ${
-              activeTab === 'hours'
-                ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/20'
-                : 'text-[var(--text-muted)] hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            <span>Tijdregistratie & Timer</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('travel')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shrink-0 ${
-              activeTab === 'travel'
-                ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/20'
-                : 'text-[var(--text-muted)] hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Car className="w-4 h-4" />
-            <span>Verplaatsingen ({travelEntries.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('reports')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shrink-0 ${
-              activeTab === 'reports'
-                ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/20'
-                : 'text-[var(--text-muted)] hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Overuren & Rapporten</span>
-          </button>
+        {/* Tabs: echte knoppen met role="tab", passen op 375 px */}
+        <div
+          role="tablist"
+          aria-label="Onderdelen"
+          className="grid grid-cols-3 gap-1.5 mb-6 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-[var(--panel-border)]"
+        >
+          {TABS.map(tab => {
+            const selected = activeTab === tab.id;
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                id={`tab-${tab.id}`}
+                aria-selected={selected}
+                aria-controls={`panel-${tab.id}`}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setActiveTab(tab.id)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                  const idx = TABS.findIndex(t => t.id === tab.id);
+                  const next = TABS[(idx + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+                  setActiveTab(next.id);
+                  document.getElementById(`tab-${next.id}`)?.focus();
+                }}
+                className={`flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all min-w-0 ${
+                  selected
+                    ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/20'
+                    : 'text-[var(--text-muted)] hover:bg-white dark:hover:bg-slate-800'
+                }`}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="truncate sm:hidden">{tab.short}</span>
+                <span className="truncate hidden sm:inline">
+                  {tab.long}{tab.id === 'travel' ? ` (${travelEntries.length})` : ''}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Tab Body Content */}
         <div>
           {activeTab === 'hours' && (
-            <div className="space-y-8">
+            <div role="tabpanel" id="panel-hours" aria-labelledby="tab-hours" className="space-y-8">
               <HoursTab
-                timer={timer}
-                liveMinutes={liveMinutes}
                 currentWeekTotalMin={currentWeekTotalMin}
                 currentWeekIctMin={currentWeekIctMin}
                 currentWeekTeachingMin={currentWeekTeachingMin}
@@ -1161,15 +1177,11 @@ export default function App() {
                 currentTargetUpToMin={currentWeekData?.targetMin ?? 0}
                 currentWeekBalanceMin={currentWeekData?.balanceMin ?? 0}
                 progressPercent={progressPercent}
-                onStartTimer={handleStartTimer}
-                onStopTimer={handleStopTimer}
                 onAddManualWorkEntry={handleAddManualWorkEntry}
                 onAddFreeDay={handleAddFreeDay}
                 onAddVacationPeriod={handleAddVacationPeriod}
                 defaultDate={defaultToday}
                 scheduleConfig={scheduleConfig}
-                onOpenScheduleConfig={() => setIsScheduleModalOpen(true)}
-                onOpenSickLeaveModal={() => setIsSickModalOpen(true)}
               />
 
               <WorkEntryList
@@ -1186,6 +1198,7 @@ export default function App() {
           )}
 
           {activeTab === 'travel' && (
+            <div role="tabpanel" id="panel-travel" aria-labelledby="tab-travel">
             <TravelTab
               travelEntries={travelEntries}
               currentSchoolYear={currentSchoolYear}
@@ -1193,9 +1206,11 @@ export default function App() {
               onDeleteTravelEntry={handleDeleteTravelEntry}
               defaultDate={defaultToday}
             />
+            </div>
           )}
 
           {activeTab === 'reports' && (
+            <div role="tabpanel" id="panel-reports" aria-labelledby="tab-reports">
             <ReportsTab
               schoolYearsData={schoolYearsData}
               monthlyData={monthlyData}
@@ -1204,6 +1219,7 @@ export default function App() {
               travelEntries={travelEntries}
               scheduleConfig={scheduleConfig}
             />
+            </div>
           )}
         </div>
 

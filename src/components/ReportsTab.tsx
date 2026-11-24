@@ -15,7 +15,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { SchoolYearData, WorkEntry, TravelEntry, UserScheduleConfig } from '../types';
-import { formatMinutes, formatMonoTime, formatWeekLabel, computeScheduleDetails, getTransportRate, calculateDuration, CATEGORY_CONFIG, formatBalanceText, formatSignedMono } from '../utils/calculations';
+import { formatMinutes, formatMonoTime, formatWeekLabel, computeScheduleDetails, getTransportRate, calculateDuration, CATEGORY_CONFIG, formatBalanceText, formatSignedMono, formatEuro, formatKm } from '../utils/calculations';
 
 const balanceColor = (min: number) =>
   min >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400';
@@ -499,7 +499,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                     Verplaatsing:
                   </span>
                   <span className="font-mono font-bold">
-                    {m.travelKm.toFixed(1)} km • € {m.travelComp.toFixed(2)}
+                    {formatKm(m.travelKm)} • {formatEuro(m.travelComp)}
                   </span>
                 </div>
               </div>

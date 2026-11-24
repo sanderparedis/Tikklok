@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Car, Bike, Plus, Trash2, MapPin } from 'lucide-react';
 import { TravelEntry, TransportType } from '../types';
-import { TRANSPORT_RATES, LOCATIONS, ROUTE_DISTANCES, getTransportRate, formatRate, getSchoolYearBounds } from '../utils/calculations';
+import { TRANSPORT_RATES, LOCATIONS, ROUTE_DISTANCES, getTransportRate, formatRate, getSchoolYearBounds, formatEuro, formatKm, formatDateBE } from '../utils/calculations';
 
 interface TravelTabProps {
   travelEntries: TravelEntry[];
@@ -52,7 +52,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
             <Car className="w-4 h-4" />
           </div>
           <div className="text-2xl font-bold font-mono text-[var(--text-main)]">
-            {totalKm.toFixed(1)} km
+            {formatKm(totalKm)}
           </div>
           <p className="text-xs text-[var(--text-muted)] mt-1">
             Schooljaar {currentSchoolYear} ({schoolYearEntries.length} ritten)
@@ -65,10 +65,10 @@ export const TravelTab: React.FC<TravelTabProps> = ({
             <Bike className="w-4 h-4" />
           </div>
           <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
-            € {totalComp.toFixed(2)}
+            {formatEuro(totalComp)}
           </div>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Auto (€ {TRANSPORT_RATES.auto.toString().replace('.', ',')}/km) • Fiets (€ {TRANSPORT_RATES.fiets.toFixed(2).replace('.', ',')}/km)
+            Auto (€ {formatRate(TRANSPORT_RATES.auto)}/km) • Fiets (€ {formatRate(TRANSPORT_RATES.fiets)}/km)
           </p>
         </div>
       </div>
@@ -96,7 +96,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
                 }`}
               >
                 <Car className="w-4 h-4" />
-                <span>Auto (€ {TRANSPORT_RATES.auto.toString().replace('.', ',')} / km)</span>
+                <span>Auto (€ {formatRate(TRANSPORT_RATES.auto)} / km)</span>
               </button>
 
               <button
@@ -188,12 +188,12 @@ export const TravelTab: React.FC<TravelTabProps> = ({
 
               <label className="sm:col-span-2 flex items-center gap-2 text-xs text-[var(--text-main)] cursor-pointer">
                 <input type="checkbox" checked={roundTrip} onChange={(e) => setRoundTrip(e.target.checked)} />
-                <span>Heen en terug ({oneWayDistance} km × 2)</span>
+                <span>Heen en terug ({formatKm(oneWayDistance)} × 2)</span>
               </label>
 
               <div className="sm:col-span-2 flex justify-between items-center text-xs text-[var(--text-muted)] pt-2 border-t border-[var(--panel-border)]">
-                <span>Berekende afstand: <strong className="font-mono text-sm text-[var(--text-main)]">{calculatedDistance} km</strong></span>
-                <span>Vergoeding: <strong className="font-mono text-sm text-emerald-600 dark:text-emerald-400">€ {(calculatedDistance * TRANSPORT_RATES[transportType]).toFixed(2)}</strong></span>
+                <span>Berekende afstand: <strong className="font-mono text-sm text-[var(--text-main)]">{formatKm(calculatedDistance)}</strong></span>
+                <span>Vergoeding: <strong className="font-mono text-sm text-emerald-600 dark:text-emerald-400">{formatEuro(calculatedDistance * TRANSPORT_RATES[transportType])}</strong></span>
               </div>
             </div>
           ) : (
@@ -261,7 +261,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
                         {entry.description}
                       </div>
                       <div className="text-xs text-[var(--text-muted)]">
-                        {entry.date} • {entry.type === 'auto' ? 'Auto' : 'Fiets'} • {entry.distance} km
+                        {formatDateBE(entry.date)} • {entry.type === 'auto' ? 'Auto' : 'Fiets'} • {formatKm(entry.distance)}
                       </div>
                     </div>
                   </div>
@@ -269,11 +269,11 @@ export const TravelTab: React.FC<TravelTabProps> = ({
                   <div className="flex items-center gap-4">
                     <div className="text-right">
                       <div className="font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                        € {comp.toFixed(2)}
+                        {formatEuro(comp)}
                       </div>
                     </div>
                     <button
-                      onClick={() => { if (window.confirm(`Rit "${entry.description}" van ${entry.date} verwijderen?`)) onDeleteTravelEntry(entry.id); }}
+                      onClick={() => { if (window.confirm(`Rit "${entry.description}" van ${formatDateBE(entry.date)} verwijderen?`)) onDeleteTravelEntry(entry.id); }}
                       title="Verwijderen"
                       className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
                     >
