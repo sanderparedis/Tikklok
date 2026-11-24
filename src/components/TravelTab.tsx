@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Car, Bike, Plus, Trash2, MapPin } from 'lucide-react';
 import { TravelEntry, TransportType } from '../types';
-import { TRANSPORT_RATES, LOCATIONS, ROUTE_DISTANCES, getTransportRate, formatRate } from '../utils/calculations';
+import { TRANSPORT_RATES, LOCATIONS, ROUTE_DISTANCES, getTransportRate, formatRate, getSchoolYearBounds } from '../utils/calculations';
 
 interface TravelTabProps {
   travelEntries: TravelEntry[];
+  currentSchoolYear: string;
   onAddTravelEntry: (e: React.FormEvent<HTMLFormElement>) => void;
   onDeleteTravelEntry: (id: string) => void;
   defaultDate: string;
@@ -12,6 +13,7 @@ interface TravelTabProps {
 
 export const TravelTab: React.FC<TravelTabProps> = ({
   travelEntries,
+  currentSchoolYear,
   onAddTravelEntry,
   onDeleteTravelEntry,
   defaultDate
@@ -34,8 +36,11 @@ export const TravelTab: React.FC<TravelTabProps> = ({
   const oneWayDistance = ROUTE_DISTANCES[startLoc]?.[endLoc] || 0;
   const calculatedDistance = Math.round(oneWayDistance * (roundTrip ? 2 : 1) * 10) / 10;
 
-  const totalKm = travelEntries.reduce((acc, t) => acc + t.distance, 0);
-  const totalComp = travelEntries.reduce((acc, t) => acc + (t.distance * getTransportRate(t.type, t.date)), 0);
+  // Totalen enkel over het lopende schooljaar (1 sep t/m 31 aug)
+  const syBounds = getSchoolYearBounds(currentSchoolYear);
+  const schoolYearEntries = travelEntries.filter(t => t.date >= syBounds.start && t.date <= syBounds.end);
+  const totalKm = schoolYearEntries.reduce((acc, t) => acc + t.distance, 0);
+  const totalComp = schoolYearEntries.reduce((acc, t) => acc + (t.distance * getTransportRate(t.type, t.date)), 0);
 
   return (
     <div className="space-y-6">
@@ -43,20 +48,20 @@ export const TravelTab: React.FC<TravelTabProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="card-panel p-5">
           <div className="flex items-center justify-between text-brand-primary mb-2">
-            <span className="label-tiny !mb-0 text-brand-primary font-semibold">Totaal Afstand</span>
+            <span className="label-tiny !mb-0 text-brand-primary font-semibold">Afstand schooljaar</span>
             <Car className="w-4 h-4" />
           </div>
           <div className="text-2xl font-bold font-mono text-[var(--text-main)]">
             {totalKm.toFixed(1)} km
           </div>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Over alle geregistreerde ritten
+            Schooljaar {currentSchoolYear} ({schoolYearEntries.length} ritten)
           </p>
         </div>
 
         <div className="card-panel p-5">
           <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 mb-2">
-            <span className="label-tiny !mb-0 text-emerald-700 dark:text-emerald-300 font-semibold">Totaal Vergoeding</span>
+            <span className="label-tiny !mb-0 text-emerald-700 dark:text-emerald-300 font-semibold">Vergoeding schooljaar</span>
             <Bike className="w-4 h-4" />
           </div>
           <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">

@@ -303,13 +303,110 @@ export const getBaseTargetForSchoolYear = (schoolYear?: string, config?: UserSch
   return computeScheduleDetails(config).adminTargetMin;
 };
 
+/** Weeklabel ma t/m zo, bv. "14 sep t/m 20 sep 2026" (weekendwerk telt mee in die week). */
 export const formatWeekLabel = (mondayStr: string): string => {
   const d = new Date(mondayStr + 'T00:00:00');
-  const startStr = d.toLocaleDateString('nl', { day: 'numeric', month: 'short' });
+  const startStr = d.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short' });
   const end = new Date(d);
-  end.setDate(d.getDate() + 4); // Friday
-  const endStr = end.toLocaleDateString('nl', { day: 'numeric', month: 'short', year: 'numeric' });
+  end.setDate(d.getDate() + 6); // zondag
+  const endStr = end.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short', year: 'numeric' });
   return `${startStr} t/m ${endStr}`;
+};
+
+/** Kort weeklabel zonder jaar, bv. "14 sep - 20 sep". */
+export const formatWeekLabelShort = (mondayStr: string): string => {
+  const d = new Date(mondayStr + 'T00:00:00');
+  const end = new Date(d);
+  end.setDate(d.getDate() + 6);
+  const fmt = (x: Date) => x.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short' });
+  return `${fmt(d)} - ${fmt(end)}`;
+};
+
+/** Saldo als tekst: "voor 1u 5m" / "achter 3u 10m" / "op schema". */
+export const formatBalanceText = (minutes: number): string => {
+  const m = Math.round(minutes);
+  if (m === 0) return 'op schema';
+  return m > 0 ? `voor ${formatMinutes(m)}` : `achter ${formatMinutes(-m)}`;
+};
+
+/** Saldo in mono-notatie met teken, bv. "+01:05" / "-03:10". */
+export const formatSignedMono = (minutes: number): string =>
+  minutes >= 0 ? `+${formatMonoTime(minutes)}` : formatMonoTime(minutes);
+
+/** Begin- en einddatum (YYYY-MM-DD) van een schooljaar "2026-2027": 1 sep t/m 31 aug. */
+export const getSchoolYearBounds = (schoolYear: string): { start: string; end: string } => {
+  const y = Number(schoolYear.slice(0, 4));
+  return { start: `${y}-09-01`, end: `${y + 1}-08-31` };
+};
+
+/** Is deze datum een vrije dag, vakantiedag of zomervakantiedag (dan geldt er geen norm)? */
+export const isNonWorkingDate = (
+  dateStr: string,
+  freeDays: FreeDay[],
+  vacationPeriods: VacationPeriod[]
+): boolean =>
+  freeDays.some(fd => fd.date === dateStr) ||
+  vacationPeriods.some(vp => dateStr >= vp.startDate && dateStr <= vp.endDate) ||
+  isSummerDate(dateStr);
+
+/**
+ * Pro-rata doel van een week t.e.m. `uptoDateStr` (inclusief die dag).
+ * = weekdoel min de ICT-/lesminuten van de nog komende werkdagen (na `uptoDateStr`).
+ * Zo is het pro-rata doel op zondag (of later) exact gelijk aan het volledige weekdoel,
+ * en tellen za/zo nooit mee in het doel (weekendwerk telt wel mee in het gewerkte).
+ */
+export const calculateWeekTargetUpTo = (
+  mondayStr: string,
+  uptoDateStr: string,
+  freeDays: FreeDay[],
+  vacationPeriods: VacationPeriod[],
+  userConfig?: UserScheduleConfig
+): { ictTargetMin: number; teachingTargetMin: number; isPartial: boolean } => {
+  const full = calculateWeekTarget(mondayStr, freeDays, vacationPeriods, userConfig);
+  const { daySchedules } = computeScheduleDetails(userConfig);
+  let ictRemaining = 0;
+  let teachingRemaining = 0;
+  const mon = new Date(mondayStr + 'T00:00:00');
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(mon);
+    d.setDate(mon.getDate() + i);
+    const dateStr = toLocalYYYYMMDD(d);
+    if (dateStr <= uptoDateStr) continue;
+    if (isNonWorkingDate(dateStr, freeDays, vacationPeriods)) continue;
+    const sched = daySchedules[d.getDay()];
+    if (sched) {
+      ictRemaining += sched.ictMin;
+      teachingRemaining += sched.teachingMin;
+    }
+  }
+  return {
+    ictTargetMin: Math.max(0, full.targetMin - ictRemaining),
+    teachingTargetMin: Math.max(0, full.teachingTargetMin - teachingRemaining),
+    isPartial: uptoDateStr < getSundayStr(mondayStr)
+  };
+};
+
+/** Bedrag in Belgische notatie: "€ 8,40". */
+export const formatEuro = (amount: number): string =>
+  `€ ${amount.toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Afstand in Belgische notatie: "7,7 km". */
+export const formatKm = (km: number): string =>
+  `${km.toLocaleString('nl-BE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
+
+/** Datum in Belgische notatie: "di 17 nov 2026". */
+export const formatDateBE = (dateStr: string): string =>
+  new Date(dateStr + 'T00:00:00').toLocaleDateString('nl-BE', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+
+/** Is de datum een zaterdag of zondag? */
+export const isWeekendDate = (dateStr: string): boolean => {
+  const day = new Date(dateStr + 'T00:00:00').getDay();
+  return day === 0 || day === 6;
 };
 
 export const calculateWeekTarget = (

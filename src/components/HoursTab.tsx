@@ -17,7 +17,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { WorkCategory, FreeDayType, TimerState, UserScheduleConfig } from '../types';
-import { formatTimer, formatMinutes, formatMonoTime, CATEGORY_CONFIG, toLocalYYYYMMDD, computeScheduleDetails } from '../utils/calculations';
+import { formatTimer, formatMinutes, formatMonoTime, CATEGORY_CONFIG, toLocalYYYYMMDD, computeScheduleDetails, formatBalanceText } from '../utils/calculations';
 
 interface HoursTabProps {
   timer: TimerState;
@@ -27,6 +27,9 @@ interface HoursTabProps {
   currentWeekTeachingMin: number;
   currentWeekWaiMin?: number;
   currentTargetMinutes: number;
+  /** Pro-rata doel t.e.m. vandaag en het bijhorende saldo (zelfde cijfer als in het rapport). */
+  currentTargetUpToMin?: number;
+  currentWeekBalanceMin?: number;
   progressPercent: number;
   onStartTimer: (category: WorkCategory) => void;
   onStopTimer: () => void;
@@ -47,6 +50,8 @@ export const HoursTab: React.FC<HoursTabProps> = ({
   currentWeekTeachingMin,
   currentWeekWaiMin = 0,
   currentTargetMinutes,
+  currentTargetUpToMin = 0,
+  currentWeekBalanceMin = 0,
   progressPercent,
   onStartTimer,
   onStopTimer,
@@ -92,9 +97,16 @@ export const HoursTab: React.FC<HoursTabProps> = ({
               <span className="text-sm font-normal text-[var(--text-muted)]">
                 van {formatMinutes(currentTargetMinutes)} doel ({schedule.fractionLabel})
               </span>
-              {currentWeekIctMin > currentTargetMinutes && (
-                <span className="text-xs px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold">
-                  +{formatMinutes(currentWeekIctMin - currentTargetMinutes)} overuren
+              {currentTargetMinutes > 0 && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-md font-semibold ${
+                    currentWeekBalanceMin >= 0
+                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                  }`}
+                  title={`Doel t.e.m. vandaag: ${formatMinutes(currentTargetUpToMin)}`}
+                >
+                  {formatBalanceText(currentWeekBalanceMin)} (t.e.m. vandaag)
                 </span>
               )}
             </div>

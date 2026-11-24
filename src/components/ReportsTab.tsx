@@ -15,7 +15,21 @@ import {
   Sparkles
 } from 'lucide-react';
 import { SchoolYearData, WorkEntry, TravelEntry, UserScheduleConfig } from '../types';
-import { formatMinutes, formatMonoTime, formatWeekLabel, computeScheduleDetails, getTransportRate, calculateDuration, CATEGORY_CONFIG } from '../utils/calculations';
+import { formatMinutes, formatMonoTime, formatWeekLabel, computeScheduleDetails, getTransportRate, calculateDuration, CATEGORY_CONFIG, formatBalanceText, formatSignedMono } from '../utils/calculations';
+
+const balanceColor = (min: number) =>
+  min >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400';
+
+/** Badge voor weekendwerk (telt mee in de week). */
+const WeekendBadge: React.FC<{ minutes: number }> = ({ minutes }) =>
+  minutes > 0 ? (
+    <span
+      className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900"
+      title={`${formatMinutes(minutes)} gewerkt in het weekend (telt mee in deze week)`}
+    >
+      weekend {formatMinutes(minutes)}
+    </span>
+  ) : null;
 import * as XLSX from 'xlsx';
 
 interface MonthlyReportItem {
@@ -38,6 +52,11 @@ interface LastWeekReportItem {
   workedTeachingMin: number;
   workedTotalMin: number;
   balanceMin: number;
+  fullTargetMin: number;
+  teachingTargetMin: number;
+  teachingBalanceMin: number;
+  weekendMin: number;
+  isCurrentWeek: boolean;
   freeDaysCount: number;
 }
 
@@ -145,12 +164,13 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                     : 'border-[var(--panel-border)] bg-[var(--panel-bg)]'
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2 gap-2">
                   <span className="text-xs font-bold text-[var(--text-main)]">
                     {week.weekLabel}
+                    <WeekendBadge minutes={week.weekendMin} />
                   </span>
                   {idx === 0 && (
-                    <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full bg-brand-primary text-white">
+                    <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full bg-brand-primary text-white shrink-0">
                       Deze Week
                     </span>
                   )}
@@ -165,32 +185,35 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
 
                   {/* Target */}
                   <div className="flex justify-between items-center text-[var(--text-muted)]">
-                    <span>ICT Streefdoel:</span>
-                    <span className="font-mono">{formatMonoTime(week.targetMin)}</span>
+                    <span>{week.isCurrentWeek ? 'ICT Doel t.e.m. vandaag:' : 'ICT Streefdoel:'}</span>
+                    <span className="font-mono" title={week.isCurrentWeek ? `Volledig weekdoel: ${formatMinutes(week.fullTargetMin)}` : undefined}>
+                      {formatMonoTime(week.targetMin)}
+                      {week.isCurrentWeek && <span className="text-[10px]"> / {formatMonoTime(week.fullTargetMin)}</span>}
+                    </span>
                   </div>
 
                   {/* Saldo */}
                   <div className="flex justify-between items-center pt-1 border-t border-[var(--panel-border)]/60">
                     <span className="font-semibold text-slate-700 dark:text-slate-300">Overuren Saldo:</span>
-                    {idx === 0 && week.workedIctMin < week.targetMin ? (
-                      <span className="font-mono font-bold text-slate-500 dark:text-slate-400">
-                        +00:00 <span className="text-[10px] font-normal">(in opbouw)</span>
-                      </span>
-                    ) : (
-                      <span className={`font-mono font-bold ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                        {isPositive ? `+${formatMonoTime(week.balanceMin)}` : formatMonoTime(week.balanceMin)}
-                      </span>
-                    )}
+                    <span className={`font-mono font-bold ${balanceColor(week.balanceMin)}`}>
+                      {formatSignedMono(week.balanceMin)}
+                    </span>
                   </div>
+                  {week.isCurrentWeek && (
+                    <div className={`text-right text-[11px] font-semibold ${balanceColor(week.balanceMin)}`}>
+                      {formatBalanceText(week.balanceMin)} (t.e.m. vandaag)
+                    </div>
+                  )}
 
-                  {/* Categories breakdown */}
-                  <div className="pt-2 border-t border-[var(--panel-border)]/50 flex justify-between items-center text-[11px]">
-                    <span className="text-purple-700 dark:text-purple-300 font-medium">
-                      Les (eigen admin): <strong>{formatMonoTime(week.workedTeachingMin)}</strong>
-                    </span>
-                    <span className="text-[var(--text-muted)] font-mono">
+                  {/* Lesopdracht: eigen saldo */}
+                  <div className="pt-2 border-t border-[var(--panel-border)]/50 space-y-1 text-[11px]">
+                    <div className="flex justify-between items-center text-purple-700 dark:text-purple-300 font-medium">
+                      <span>Les (eigen admin): <strong>{formatMonoTime(week.workedTeachingMin)}</strong> / {formatMonoTime(week.teachingTargetMin)}</span>
+                      <span className={`font-mono font-bold ${balanceColor(week.teachingBalanceMin)}`}>{formatSignedMono(week.teachingBalanceMin)}</span>
+                    </div>
+                    <div className="flex justify-end text-[var(--text-muted)] font-mono">
                       Totaal: {formatMonoTime(week.workedTotalMin)}
-                    </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -217,6 +240,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
           {schoolYearsData.map((sy) => {
             const isExpanded = expandedYear === sy.schoolYear;
             const isOvertimePos = sy.overtimeBalance >= 0;
+            const isTeachingPos = sy.teachingBalance >= 0;
             const baseHoursStr = formatMinutes(sy.baseWeeklyTargetMin);
 
             return (
@@ -267,6 +291,16 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                       </div>
                     </div>
 
+                    {/* Eigen saldo lesopdracht */}
+                    <div className="text-left sm:text-right">
+                      <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--text-muted)]">
+                        Saldo Les ({schedule.teachingFractionLabel}, eigen)
+                      </div>
+                      <div className={`font-mono font-bold text-sm ${isTeachingPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                        {formatSignedMono(sy.teachingBalance)}
+                      </div>
+                    </div>
+
                     {/* Breakdown */}
                     <div className="text-left sm:text-right text-xs">
                       <div className="text-sky-700 dark:text-sky-300 font-semibold">
@@ -303,7 +337,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                         <div className="font-mono font-bold text-sm text-purple-700 dark:text-purple-300">
                           {formatMinutes(sy.totalWorkedTeaching)}
                         </div>
-                        <div className="text-[10px] text-[var(--text-muted)]">Eigen admin</div>
+                        <div className="text-[10px] text-[var(--text-muted)]">Doel {formatMinutes(sy.totalTeachingTargetMin)} • eigen admin</div>
                       </div>
 
                       <div className="p-3 rounded-xl bg-[var(--panel-bg)] border border-[var(--panel-border)]">
@@ -323,7 +357,9 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                             <th className="p-3 text-sky-700 dark:text-sky-300">ICT Gewerkt ({schedule.fractionLabel})</th>
                             <th className="p-3">ICT Doel</th>
                             <th className="p-3">Overuren Saldo</th>
-                            <th className="p-3 text-purple-700 dark:text-purple-300">Lesopdracht ({schedule.teachingFractionLabel} - eigen admin)</th>
+                            <th className="p-3 text-purple-700 dark:text-purple-300">Les ({schedule.teachingFractionLabel})</th>
+                            <th className="p-3 text-purple-700 dark:text-purple-300">Les Doel</th>
+                            <th className="p-3 text-purple-700 dark:text-purple-300">Les Saldo (eigen)</th>
                             <th className="p-3">Totaal Gewerkt</th>
                           </tr>
                         </thead>
@@ -331,9 +367,15 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                           {sy.weeks.map(w => {
                             const isWeekPos = w.balanceMin >= 0;
                             return (
-                              <tr key={w.weekKey} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                                <td className="p-3 font-medium text-[var(--text-main)]">
+                              <tr key={w.weekKey} className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/30 ${w.isCurrentWeek ? 'bg-brand-primary/5' : ''}`}>
+                                <td className="p-3 font-medium text-[var(--text-main)] whitespace-nowrap">
                                   {formatWeekLabel(w.weekKey)}
+                                  {w.isCurrentWeek && (
+                                    <span className="ml-1.5 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-brand-primary text-white" title="Doel en saldo t.e.m. vandaag">
+                                      lopend
+                                    </span>
+                                  )}
+                                  <WeekendBadge minutes={w.weekendMin} />
                                   {w.sickDaysCount && w.sickDaysCount > 0 ? (
                                     <span className="ml-1.5 text-[10px] text-rose-600 dark:text-rose-400 font-semibold">
                                       ({w.sickDaysCount} {w.sickDaysCount === 1 ? 'ziektedag' : 'ziektedagen'})
@@ -348,14 +390,21 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                                 <td className="p-3 font-mono font-bold text-sky-700 dark:text-sky-300">
                                   {formatMonoTime(w.workedIct)}
                                 </td>
-                                <td className="p-3 font-mono text-[var(--text-muted)]">
+                                <td className="p-3 font-mono text-[var(--text-muted)]" title={w.isCurrentWeek ? `Doel t.e.m. vandaag (volledige week: ${formatMinutes(w.fullTargetMin)})` : undefined}>
                                   {formatMonoTime(w.targetMin)}
+                                  {w.isCurrentWeek && <span className="text-[10px]"> / {formatMonoTime(w.fullTargetMin)}</span>}
                                 </td>
                                 <td className={`p-3 font-mono font-bold ${isWeekPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
                                   {isWeekPos ? `+${formatMonoTime(w.balanceMin)}` : formatMonoTime(w.balanceMin)}
                                 </td>
                                 <td className="p-3 font-mono text-purple-700 dark:text-purple-300">
                                   {formatMonoTime(w.workedTeaching)}
+                                </td>
+                                <td className="p-3 font-mono text-[var(--text-muted)]">
+                                  {formatMonoTime(w.teachingTargetMin)}
+                                </td>
+                                <td className={`p-3 font-mono font-bold ${balanceColor(w.teachingBalanceMin)}`}>
+                                  {formatSignedMono(w.teachingBalanceMin)}
                                 </td>
                                 <td className="p-3 font-mono font-semibold text-brand-primary">
                                   {formatMonoTime(w.workedTotal)}

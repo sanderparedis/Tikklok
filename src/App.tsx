@@ -42,6 +42,10 @@ import {
   getMondayStr,
   getSundayStr,
   isIctCategory,
+  isWeekendDate,
+  calculateWeekTargetUpTo,
+  formatWeekLabelShort,
+  getSchoolYearBounds,
   DEFAULT_SCHEDULE_CONFIG
 } from './utils/calculations';
 
@@ -399,7 +403,7 @@ export default function App() {
   // Aggregate School Years Data
   const schoolYearsData: SchoolYearData[] = useMemo(() => {
     const syMap: Record<string, {
-      weeks: Record<string, { ict: number; teaching: number }>;
+      weeks: Record<string, { ict: number; teaching: number; weekend: number }>;
     }> = {};
 
     // Collect all Mondays from work entries
@@ -411,9 +415,12 @@ export default function App() {
         syMap[sy] = { weeks: {} };
       }
       if (!syMap[sy].weeks[monStr]) {
-        syMap[sy].weeks[monStr] = { ict: 0, teaching: 0 };
+        syMap[sy].weeks[monStr] = { ict: 0, teaching: 0, weekend: 0 };
       }
       const dur = calculateDuration(entry.startTime, entry.endTime, entry.breakTime || 0);
+      if (isWeekendDate(entry.date)) {
+        syMap[sy].weeks[monStr].weekend += dur;
+      }
       if (entry.category === 'teaching') {
         syMap[sy].weeks[monStr].teaching += dur;
       } else if (isIctCategory(entry.category)) {
@@ -430,7 +437,7 @@ export default function App() {
         syMap[sy] = { weeks: {} };
       }
       if (!syMap[sy].weeks[monStr]) {
-        syMap[sy].weeks[monStr] = { ict: 0, teaching: 0 };
+        syMap[sy].weeks[monStr] = { ict: 0, teaching: 0, weekend: 0 };
       }
     });
 
@@ -439,7 +446,7 @@ export default function App() {
       syMap[currentSchoolYear] = { weeks: {} };
     }
     if (!syMap[currentSchoolYear].weeks[currentMondayStr]) {
-      syMap[currentSchoolYear].weeks[currentMondayStr] = { ict: 0, teaching: 0 };
+      syMap[currentSchoolYear].weeks[currentMondayStr] = { ict: 0, teaching: 0, weekend: 0 };
     }
 
     // Vul ontbrekende weken op tussen de eerste geregistreerde week en de laatste (of huidige) week.
@@ -455,7 +462,7 @@ export default function App() {
       while (toLocalYYYYMMDD(cur) <= last && guard < 60) {
         const k = toLocalYYYYMMDD(cur);
         if (!syMap[sy].weeks[k] && getSchoolYearForDate(k) === sy) {
-          syMap[sy].weeks[k] = { ict: 0, teaching: 0 };
+          syMap[sy].weeks[k] = { ict: 0, teaching: 0, weekend: 0 };
         }
         cur.setDate(cur.getDate() + 7);
         guard++;
@@ -472,18 +479,24 @@ export default function App() {
         let totalWorkedIct = 0;
         let totalWorkedTeaching = 0;
         let totalTargetMin = 0;
+        let totalTeachingTargetMin = 0;
         let activeTeachingWeeks = 0;
-        let completedWeeksOvertime = 0;
 
         const weeks: SchoolYearWeekData[] = weekKeys.map(monStr => {
           const wData = syMap[sy].weeks[monStr];
           const targetInfo = calculateWeekTarget(monStr, freeDays, vacationPeriods, scheduleConfig);
-          
+          const isCurrentWeek = isCurrent && monStr === currentMondayStr;
+
+          // Lopende week: doel pro rata t.e.m. vandaag. Afgelopen weken: volledig weekdoel.
+          const upTo = isCurrentWeek
+            ? calculateWeekTargetUpTo(monStr, defaultToday, freeDays, vacationPeriods, scheduleConfig)
+            : { ictTargetMin: targetInfo.targetMin, teachingTargetMin: targetInfo.teachingTargetMin };
+
           let wIct = wData.ict;
           let wTeaching = wData.teaching;
 
-          // Add live timer if current week
-          if (isCurrent && monStr === currentMondayStr && timer.isActive) {
+          // Live timer telt mee in de lopende week
+          if (isCurrentWeek && timer.isActive) {
             if (timer.category === 'teaching') {
               wTeaching += liveMinutes;
             } else if (isIctCategory(timer.category)) {
@@ -494,20 +507,17 @@ export default function App() {
           const workedIct = Math.round(wIct);
           const workedTeaching = Math.round(wTeaching);
           const workedTotal = workedIct + workedTeaching;
-          // Optie C: enkel de administratieve uren (ICT 15/21) tellen mee voor de overurenbalans
-          const balanceMin = workedIct - targetInfo.targetMin;
+          // Enkel de administratieve uren (ICT 15/21) tellen mee voor het officiële overurensaldo
+          const balanceMin = workedIct - upTo.ictTargetMin;
+          // Lesopdracht: eigen saldo, los van het officiële saldo
+          const teachingBalanceMin = workedTeaching - upTo.teachingTargetMin;
 
           totalWorkedIct += workedIct;
           totalWorkedTeaching += workedTeaching;
-          totalTargetMin += targetInfo.targetMin;
+          totalTargetMin += upTo.ictTargetMin;
+          totalTeachingTargetMin += upTo.teachingTargetMin;
           if (workedTeaching > 0) {
             activeTeachingWeeks++;
-          }
-
-          if (isCurrent) {
-            if (monStr < currentMondayStr) {
-              completedWeeksOvertime += balanceMin;
-            }
           }
 
           return {
@@ -515,28 +525,26 @@ export default function App() {
             workedIct,
             workedTeaching,
             workedTotal,
-            targetMin: targetInfo.targetMin,
+            targetMin: upTo.ictTargetMin,
+            fullTargetMin: targetInfo.targetMin,
             reductionMin: targetInfo.reductionMin,
             freeDaysCount: targetInfo.freeDaysCount,
             sickDaysCount: targetInfo.sickDaysCount,
             summerDaysCount: targetInfo.summerDaysCount,
-            balanceMin
+            balanceMin,
+            teachingTargetMin: upTo.teachingTargetMin,
+            teachingBalanceMin,
+            weekendMin: Math.round(wData.weekend),
+            isCurrentWeek
           };
         });
 
         const totalWorkedAll = totalWorkedIct + totalWorkedTeaching;
-        
-        // For the current active school year: start at 0 (clean slate on Sep 1) + completed weeks + current week surplus in ICT
-        let overtimeBalance: number;
-        if (isCurrent) {
-          const currentWeekData = weeks.find(w => w.weekKey === currentMondayStr);
-          const currentWeekSurplus = currentWeekData && currentWeekData.workedIct > currentWeekData.targetMin
-            ? currentWeekData.workedIct - currentWeekData.targetMin
-            : 0;
-          overtimeBalance = completedWeeksOvertime + currentWeekSurplus;
-        } else {
-          overtimeBalance = totalWorkedIct - totalTargetMin;
-        }
+
+        // Saldo = som van alle weken, inclusief de lopende week pro rata (t.e.m. vandaag).
+        // Zo tonen het saldo bovenaan, het weekkaartje en de tabel overal hetzelfde.
+        const overtimeBalance = totalWorkedIct - totalTargetMin;
+        const teachingBalance = totalWorkedTeaching - totalTeachingTargetMin;
 
         const weeksCount = weeks.length;
         const divisor = activeTeachingWeeks > 0 ? activeTeachingWeeks : (weeksCount > 0 ? weeksCount : 1);
@@ -550,6 +558,8 @@ export default function App() {
           totalTargetMin,
           overtimeBalance,
           activeOvertime: overtimeBalance,
+          totalTeachingTargetMin,
+          teachingBalance,
           isCurrent,
           weeksCount,
           activeTeachingWeeks,
@@ -560,14 +570,23 @@ export default function App() {
       });
 
     return result;
-  }, [workEntries, currentSchoolYear, currentMondayStr, freeDays, vacationPeriods, timer.isActive, timer.category, liveMinutes, scheduleConfig]);
+  }, [workEntries, currentSchoolYear, currentMondayStr, defaultToday, freeDays, vacationPeriods, timer.isActive, timer.category, liveMinutes, scheduleConfig]);
 
   const currentYearData = schoolYearsData.find(s => s.schoolYear === currentSchoolYear);
   const currentOvertimeBalance = currentYearData?.overtimeBalance || 0;
   // Totaal gewerkt = ICT + lesopdracht + W-AI (W-AI telt wel mee in het totaal, niet in ICT/overuren)
   const currentWeekTotalMin = currentWeekIctMin + currentWeekTeachingMin + currentWeekWaiMin;
 
-  // Last 3 weeks data
+  // Alle weken (over schooljaren heen) op maandag-sleutel, voor de weekkaartjes
+  const weekByKey = useMemo(() => {
+    const map: Record<string, SchoolYearWeekData> = {};
+    schoolYearsData.forEach(sy => sy.weeks.forEach(w => { map[w.weekKey] = w; }));
+    return map;
+  }, [schoolYearsData]);
+
+  const currentWeekData = weekByKey[currentMondayStr];
+
+  // Laatste 3 weken: dezelfde cijfers als in het schooljaaroverzicht (lopende week pro rata)
   const lastThreeWeeks = useMemo(() => {
     const list = [];
     const mon = new Date(currentMondayStr + 'T00:00:00');
@@ -576,57 +595,32 @@ export default function App() {
       const curMon = new Date(mon);
       curMon.setDate(mon.getDate() - (i * 7));
       const monStr = toLocalYYYYMMDD(curMon);
-
+      const w = weekByKey[monStr];
       const targetInfo = calculateWeekTarget(monStr, freeDays, vacationPeriods, scheduleConfig);
-      const friday = new Date(curMon);
-      friday.setDate(curMon.getDate() + 4);
-      const sunStr = getSundayStr(monStr);
-
-      let wIct = 0;
-      let wTeaching = 0;
-
-      workEntries.forEach(e => {
-        if (e.date >= monStr && e.date <= sunStr) {
-          const dur = calculateDuration(e.startTime, e.endTime, e.breakTime || 0);
-          if (e.category === 'teaching') {
-            wTeaching += dur;
-          } else if (isIctCategory(e.category)) {
-            wIct += dur;
-          }
-        }
-      });
-
-      if (i === 0 && timer.isActive) {
-        if (timer.category === 'teaching') {
-          wTeaching += liveMinutes;
-        } else if (isIctCategory(timer.category)) {
-          wIct += liveMinutes;
-        }
-      }
-
-      const workedIctMin = Math.round(wIct);
-      const workedTeachingMin = Math.round(wTeaching);
-      const workedTotalMin = workedIctMin + workedTeachingMin;
-      // Optie C: enkel de administratieve uren (ICT verdeelsleutel) bepalen het overurensaldo
-      const balanceMin = workedIctMin - targetInfo.targetMin;
-
-      const startLabel = curMon.toLocaleDateString('nl', { day: 'numeric', month: 'short' });
-      const endLabel = friday.toLocaleDateString('nl', { day: 'numeric', month: 'short' });
+      const targetMin = w ? w.targetMin : targetInfo.targetMin;
+      const teachingTargetMin = w ? w.teachingTargetMin : targetInfo.teachingTargetMin;
+      const workedIctMin = w?.workedIct ?? 0;
+      const workedTeachingMin = w?.workedTeaching ?? 0;
 
       list.push({
         mondayStr: monStr,
-        weekLabel: `${startLabel} - ${endLabel}`,
-        targetMin: targetInfo.targetMin,
+        weekLabel: formatWeekLabelShort(monStr),
+        targetMin,
+        fullTargetMin: w?.fullTargetMin ?? targetInfo.targetMin,
         workedIctMin,
         workedTeachingMin,
-        workedTotalMin,
-        balanceMin,
+        workedTotalMin: workedIctMin + workedTeachingMin,
+        balanceMin: w ? w.balanceMin : workedIctMin - targetMin,
+        teachingTargetMin,
+        teachingBalanceMin: w ? w.teachingBalanceMin : workedTeachingMin - teachingTargetMin,
+        weekendMin: w?.weekendMin ?? 0,
+        isCurrentWeek: i === 0,
         freeDaysCount: targetInfo.freeDaysCount
       });
     }
 
     return list;
-  }, [currentMondayStr, freeDays, vacationPeriods, workEntries, timer.isActive, timer.category, liveMinutes, scheduleConfig]);
+  }, [currentMondayStr, weekByKey, freeDays, vacationPeriods, scheduleConfig]);
 
   // Monthly aggregated data
   const monthlyData = useMemo(() => {
@@ -1102,6 +1096,9 @@ export default function App() {
           waiWorkedMin={currentWeekWaiMin}
           teachingWorkedMin={currentWeekTeachingMin}
           overtimeBalance={currentOvertimeBalance}
+          weekBalanceMin={currentWeekData?.balanceMin ?? 0}
+          teachingWeekBalanceMin={currentWeekData?.teachingBalanceMin ?? 0}
+          teachingBalance={currentYearData?.teachingBalance ?? 0}
           currentMonthKm={currentMonthKm}
           currentMonthTravelComp={currentMonthTravelComp}
           currentMonthName={currentMonthName}
@@ -1161,6 +1158,8 @@ export default function App() {
                 currentWeekTeachingMin={currentWeekTeachingMin}
                 currentWeekWaiMin={currentWeekWaiMin}
                 currentTargetMinutes={currentWeekTargetInfo.targetMin}
+                currentTargetUpToMin={currentWeekData?.targetMin ?? 0}
+                currentWeekBalanceMin={currentWeekData?.balanceMin ?? 0}
                 progressPercent={progressPercent}
                 onStartTimer={handleStartTimer}
                 onStopTimer={handleStopTimer}
@@ -1189,6 +1188,7 @@ export default function App() {
           {activeTab === 'travel' && (
             <TravelTab
               travelEntries={travelEntries}
+              currentSchoolYear={currentSchoolYear}
               onAddTravelEntry={handleAddTravelEntry}
               onDeleteTravelEntry={handleDeleteTravelEntry}
               defaultDate={defaultToday}

@@ -2,7 +2,7 @@ import React from 'react';
 import { Clock, Briefcase, GraduationCap, Car, Moon, Sun, LogIn, LogOut, TrendingUp, Sliders, HeartPulse, Sparkles } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { UserScheduleConfig } from '../types';
-import { formatMinutes, formatMonoTime, computeScheduleDetails } from '../utils/calculations';
+import { formatMinutes, formatMonoTime, computeScheduleDetails, formatBalanceText, formatSignedMono } from '../utils/calculations';
 
 interface HeaderStatsProps {
   user: User | null;
@@ -20,6 +20,12 @@ interface HeaderStatsProps {
   waiWorkedMin?: number;
   teachingWorkedMin: number;
   overtimeBalance: number;
+  /** Saldo ICT van de lopende week t.e.m. vandaag (pro rata). */
+  weekBalanceMin?: number;
+  /** Saldo lesopdracht van de lopende week t.e.m. vandaag (pro rata). */
+  teachingWeekBalanceMin?: number;
+  /** Eigen saldo lesopdracht over het schooljaar. */
+  teachingBalance?: number;
   currentMonthKm: number;
   currentMonthTravelComp: number;
   currentMonthName: string;
@@ -44,6 +50,9 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
   waiWorkedMin = 0,
   teachingWorkedMin,
   overtimeBalance,
+  weekBalanceMin = 0,
+  teachingWeekBalanceMin = 0,
+  teachingBalance = 0,
   currentMonthKm,
   currentMonthTravelComp,
   currentMonthName,
@@ -177,11 +186,11 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
             </div>
             <div
               className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate"
-              title={reductionMin > 0
+              title={'Saldo t.e.m. vandaag. ' + (reductionMin > 0
                 ? `Weekdoel ${formatMinutes(targetMin)}: norm ${formatMinutes(schedule.adminTargetMin)} min ${formatMinutes(reductionMin)} ${sickReductionMin > 0 ? (reductionMin === sickReductionMin ? 'ziekte' : 'ziekte/vrij') : 'vrij'}`
-                : `Weekdoel ${formatMinutes(targetMin)} (norm ${schedule.fractionLabel})`}
+                : `Weekdoel ${formatMinutes(targetMin)} (norm ${schedule.fractionLabel})`)}
             >
-              {targetMin > 0 ? `${Math.round((ictWorkedMin / targetMin) * 100)}% van ${formatMinutes(targetMin)}${reductionMin > 0 ? (sickReductionMin > 0 ? ' (ziek)' : ' (vrij)') : ''}` : 'Vrije week'}
+              {targetMin > 0 ? `Wk: ${formatBalanceText(weekBalanceMin)}` : 'Vrije week'}
             </div>
           </div>
         </div>
@@ -198,12 +207,11 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
             <div className="text-xl sm:text-2xl font-bold font-mono text-purple-700 dark:text-purple-300">
               {formatMonoTime(teachingWorkedMin)}
             </div>
-            <div className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">
-              {teachingTargetMin !== undefined && teachingTargetMin < schedule.teachingTargetMin ? (
-                <span>Eigen admin • Doel {formatMinutes(teachingTargetMin)}</span>
-              ) : (
-                <span>Eigen admin • Norm {formatMinutes(schedule.teachingTargetMin)}</span>
-              )}
+            <div
+              className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate"
+              title={`Eigen saldo lesopdracht (los van de officiële overuren). Weekdoel ${formatMinutes(teachingTargetMin ?? schedule.teachingTargetMin)}, norm ${formatMinutes(schedule.teachingTargetMin)}/week.`}
+            >
+              Wk: {formatBalanceText(teachingWeekBalanceMin)} • SJ: {formatSignedMono(teachingBalance)}
             </div>
           </div>
         </div>
@@ -255,7 +263,7 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
               {isOvertimePositive ? `+${formatMonoTime(overtimeBalance)}` : formatMonoTime(overtimeBalance)}
             </div>
             <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              {isOvertimePositive ? `Positief saldo (${schedule.fractionLabel})` : `Inhaalsaldo (${schedule.fractionLabel})`}
+              {isOvertimePositive ? 'Positief saldo' : 'Inhaalsaldo'} ({schedule.fractionLabel}, t.e.m. vandaag)
             </div>
           </div>
         </div>

@@ -61,6 +61,12 @@ export interface SchoolYearWeekData {
   sickDaysCount?: number;
   summerDaysCount: number;
   balanceMin: number;
+  /** Volledig ICT-weekdoel (targetMin is voor de lopende week het pro-rata doel t.e.m. vandaag). */
+  fullTargetMin: number;
+  teachingTargetMin: number; // lesopdracht-doel (pro-rata voor de lopende week)
+  teachingBalanceMin: number; // gewerkt lesopdracht - doel
+  weekendMin: number; // minuten gewerkt op za/zo (tellen mee in het totaal)
+  isCurrentWeek: boolean; // lopende week: saldo t.e.m. vandaag
 }
 
 export interface SchoolYearData {
@@ -71,6 +77,8 @@ export interface SchoolYearData {
   totalTargetMin: number;
   overtimeBalance: number;
   activeOvertime: number;
+  totalTeachingTargetMin: number;
+  teachingBalance: number; // eigen saldo lesopdracht (los van het officiële ICT-overurensaldo)
   isCurrent: boolean;
   weeksCount: number;
   activeTeachingWeeks: number;
