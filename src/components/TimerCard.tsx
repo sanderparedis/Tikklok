@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Square, Briefcase, GraduationCap, Sparkles } from 'lucide-react';
+import { Play, Square, Briefcase, GraduationCap, Sparkles, AlarmClock } from 'lucide-react';
 import { WorkCategory, TimerState } from '../types';
 import { formatTimer, CATEGORY_CONFIG } from '../utils/calculations';
 
@@ -8,6 +8,8 @@ interface TimerCardProps {
   liveMinutes: number;
   onStartTimer: (category: WorkCategory) => void;
   onStopTimer: () => void;
+  /** Timer loopt nog na 18:00 (of sinds een vorige dag). */
+  isLate?: boolean;
 }
 
 const CATEGORY_OPTIONS: { value: WorkCategory; label: string; active: string }[] = [
@@ -23,7 +25,7 @@ const CategoryIcon: React.FC<{ cat: WorkCategory; className: string }> = ({ cat,
  * Live timer (Start/Stop). Staat op gsm bovenaan, boven de statistieken,
  * zodat je zonder scrollen kan starten of stoppen.
  */
-export const TimerCard: React.FC<TimerCardProps> = ({ timer, liveMinutes, onStartTimer, onStopTimer }) => {
+export const TimerCard: React.FC<TimerCardProps> = ({ timer, liveMinutes, onStartTimer, onStopTimer, isLate = false }) => {
   const [timerCategory, setTimerCategory] = useState<WorkCategory>('ict');
   const activeCategory: WorkCategory = timer.isActive ? (timer.category || 'ict') : timerCategory;
   const activeConfig = CATEGORY_CONFIG[activeCategory];
@@ -45,6 +47,13 @@ export const TimerCard: React.FC<TimerCardProps> = ({ timer, liveMinutes, onStar
           {activeConfig.label}
         </span>
       </div>
+
+      {isLate && (
+        <div role="status" className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 text-xs font-semibold">
+          <AlarmClock className="w-4 h-4 shrink-0" />
+          <span>Loopt nog na 18:00 — vergeten te stoppen?</span>
+        </div>
+      )}
 
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">

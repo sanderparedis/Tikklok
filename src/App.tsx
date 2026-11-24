@@ -57,6 +57,8 @@ import { ReportsTab } from './components/ReportsTab';
 import { ScheduleConfigModal } from './components/ScheduleConfigModal';
 import { SickLeaveModal } from './components/SickLeaveModal';
 import { TimerCard } from './components/TimerCard';
+import { ChecksPanel } from './components/ChecksPanel';
+import { findDataIssues, findOverlappingEntries, describeOverlap } from './utils/checks';
 
 const TABS: { id: TabType; short: string; long: string; icon: typeof Clock }[] = [
   { id: 'hours', short: 'Uren', long: 'Tijdregistratie', icon: Clock },
@@ -716,6 +718,33 @@ export default function App() {
 
   const isValidTimeRange = (start: string, end: string) => Boolean(start && end && end > start);
 
+  // Controle: bestaande problemen in de data (alleen lezen)
+  const dataIssues = useMemo(
+    () => findDataIssues(workEntries, travelEntries, vacationPeriods),
+    [workEntries, travelEntries, vacationPeriods]
+  );
+
+  // Timer loopt nog na 18:00 (of sinds een vorige dag): eenmalige melding per sessie
+  const isTimerLate = useMemo(() => {
+    if (!timer.isActive || !timer.startTime) return false;
+    const now = new Date(currentTime);
+    return now.getHours() >= 18 || toLocalYYYYMMDD(new Date(timer.startTime)) < toLocalYYYYMMDD(now);
+  }, [timer.isActive, timer.startTime, currentTime]);
+  const lateNotifiedFor = React.useRef<number | null>(null);
+  useEffect(() => {
+    if (!isTimerLate || !timer.startTime || lateNotifiedFor.current === timer.startTime) return;
+    lateNotifiedFor.current = timer.startTime;
+    const msg = 'De timer loopt nog na 18:00. Vergeten te stoppen?';
+    setToastNotification({ type: 'info', message: msg });
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        new Notification('Tikklok', { body: msg });
+      }
+    } catch {
+      // meldingen niet beschikbaar: de toast en de badge volstaan
+    }
+  }, [isTimerLate, timer.startTime]);
+
   // Actions
   const handleStartTimer = async (category: WorkCategory) => {
     if (!user) return;
@@ -800,6 +829,11 @@ export default function App() {
       setToastNotification({ type: 'error', message: 'De eindtijd moet na de starttijd liggen.' });
       return;
     }
+    const entryDate = formData.get('date') as string;
+    const overlapping = findOverlappingEntries({ date: entryDate, startTime, endTime }, workEntries);
+    if (overlapping.length > 0 && !window.confirm(`${describeOverlap(entryDate, overlapping)}\n\nToch opslaan?`)) {
+      return;
+    }
 
     const newEntry: any = {
       id: entryId,
@@ -832,6 +866,13 @@ export default function App() {
     if (!isValidTimeRange(update.startTime, update.endTime)) {
       setToastNotification({ type: 'error', message: 'De eindtijd moet na de starttijd liggen. Wijziging niet opgeslagen.' });
       return;
+    }
+    const original = workEntries.find(e => e.id === id);
+    if (original) {
+      const overlapping = findOverlappingEntries({ date: original.date, startTime: update.startTime, endTime: update.endTime }, workEntries, id);
+      if (overlapping.length > 0 && !window.confirm(`${describeOverlap(original.date, overlapping)}\n\nToch opslaan?`)) {
+        return;
+      }
     }
     try {
       const entryRef = doc(db, 'users', user.uid, 'workEntries', id);
@@ -1118,6 +1159,7 @@ export default function App() {
               liveMinutes={liveMinutes}
               onStartTimer={handleStartTimer}
               onStopTimer={handleStopTimer}
+              isLate={isTimerLate}
             />
           }
         />
@@ -1183,6 +1225,8 @@ export default function App() {
                 defaultDate={defaultToday}
                 scheduleConfig={scheduleConfig}
               />
+
+              <ChecksPanel issues={dataIssues} />
 
               <WorkEntryList
                 workEntries={workEntries}
