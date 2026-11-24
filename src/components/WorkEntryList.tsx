@@ -11,10 +11,11 @@ import {
   Palmtree, 
   Filter, 
   FileText,
-  HeartPulse 
+  HeartPulse,
+  Sparkles
 } from 'lucide-react';
-import { WorkEntry, FreeDay, VacationPeriod, WorkCategory } from '../types';
-import { calculateDuration, formatMinutes, CATEGORY_CONFIG } from '../utils/calculations';
+import { WorkEntry, FreeDay, VacationPeriod, WorkCategory, UserScheduleConfig } from '../types';
+import { calculateDuration, formatMinutes, CATEGORY_CONFIG, computeScheduleDetails, toLocalYYYYMMDD } from '../utils/calculations';
 
 interface WorkEntryListProps {
   workEntries: WorkEntry[];
@@ -24,7 +25,30 @@ interface WorkEntryListProps {
   onUpdateWorkEntry: (id: string, update: { startTime: string; endTime: string; category: WorkCategory; description?: string }) => void;
   onDeleteFreeDay: (id: string) => void;
   onDeleteVacationPeriod: (id: string) => void;
+  scheduleConfig?: UserScheduleConfig;
 }
+
+type ListItem =
+  | { kind: 'work'; sortKey: string; entry: WorkEntry }
+  | { kind: 'free'; sortKey: string; freeDay: FreeDay }
+  | { kind: 'vacation'; sortKey: string; vacation: VacationPeriod };
+
+const formatDayLabel = (dateStr: string) =>
+  new Date(dateStr + 'T00:00:00').toLocaleDateString('nl', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+
+/** Aantal werkdagen (ma-vr) in een periode, inclusief begin- en einddatum. */
+const countWeekdays = (start: string, end: string) => {
+  let n = 0;
+  const cur = new Date(start + 'T00:00:00');
+  let guard = 0;
+  while (toLocalYYYYMMDD(cur) <= end && guard < 400) {
+    const d = cur.getDay();
+    if (d >= 1 && d <= 5) n++;
+    cur.setDate(cur.getDate() + 1);
+    guard++;
+  }
+  return n;
+};
 
 export const WorkEntryList: React.FC<WorkEntryListProps> = ({
   workEntries,
@@ -33,9 +57,10 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
   onDeleteWorkEntry,
   onUpdateWorkEntry,
   onDeleteFreeDay,
-  onDeleteVacationPeriod
+  onDeleteVacationPeriod,
+  scheduleConfig
 }) => {
-  const [filter, setFilter] = useState<'all' | 'ict' | 'teaching'>('all');
+  const [filter, setFilter] = useState<'all' | 'ict' | 'teaching' | 'wai' | 'absence'>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<{
     startTime: string;
@@ -48,12 +73,111 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
     const cat = entry.category || 'ict';
     if (filter === 'ict') return cat === 'ict';
     if (filter === 'teaching') return cat === 'teaching';
+    if (filter === 'wai') return cat === 'wai';
+    if (filter === 'absence') return false;
     return true;
   });
 
+  // "Totaal" = alle getoonde registraties (ICT + lesopdracht + W-AI)
   const totalFilteredMinutes = filteredEntries.reduce((acc, entry) => {
     return acc + calculateDuration(entry.startTime, entry.endTime, entry.breakTime || 0);
   }, 0);
+
+  // Ziektedagen, vrije dagen en vakanties chronologisch tussen de werkregistraties tonen
+  // (bij filter "Alles" en "Afwezig"; niet bij ICT/Lesopdracht).
+  const showAbsences = filter === 'all' || filter === 'absence';
+  const schedule = computeScheduleDetails(scheduleConfig);
+  const listItems: ListItem[] = [
+    ...filteredEntries.map(entry => ({ kind: 'work' as const, sortKey: entry.date + ' 1', entry })),
+    ...(showAbsences ? freeDays.map(fd => ({ kind: 'free' as const, sortKey: fd.date + ' 2', freeDay: fd })) : []),
+    ...(showAbsences ? vacationPeriods.map(vp => ({ kind: 'vacation' as const, sortKey: vp.endDate + ' 3', vacation: vp })) : [])
+  ].sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+  const absenceCount = showAbsences ? freeDays.length + vacationPeriods.length : 0;
+
+  const renderAbsence = (item: Exclude<ListItem, { kind: 'work' }>) => {
+    if (item.kind === 'free') {
+      const fd = item.freeDay;
+      const isSick = fd.type === 'ziek';
+      const dow = new Date(fd.date + 'T00:00:00').getDay();
+      const ictMin = schedule.daySchedules[dow]?.ictMin ?? 0;
+      const label = isSick ? 'Ziektedag' : fd.type === 'feestdag' ? 'Feestdag' : 'Vrije / facultatieve dag';
+      return (
+        <div
+          key={`free-${fd.id}`}
+          className={`p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${isSick ? 'bg-rose-50/40 dark:bg-rose-950/15' : 'bg-amber-50/40 dark:bg-amber-950/15'}`}
+        >
+          <div className="flex items-start sm:items-center gap-3">
+            <div className={`p-2 rounded-xl border shrink-0 ${isSick ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-300' : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/50 text-amber-600 dark:text-amber-300'}`}>
+              {isSick ? <HeartPulse className="w-4 h-4" /> : <CalendarOff className="w-4 h-4" />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-sm text-[var(--text-main)] capitalize">{formatDayLabel(fd.date)}</span>
+                <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold border ${isSick ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900/50' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900/50'}`}>
+                  {label}
+                </span>
+              </div>
+              {fd.description && (
+                <div className="text-xs text-[var(--text-muted)] italic mt-0.5 flex items-center gap-1">
+                  <FileText className="w-3 h-3 inline" /> {fd.description}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-3 self-end sm:self-auto">
+            <div className="text-right font-mono text-xs text-[var(--text-muted)]" title="Vermindering van je ICT-weekdoel">
+              {dow >= 1 && dow <= 5 ? `-${formatMinutes(ictMin)} doel` : 'weekend'}
+            </div>
+            <button
+              onClick={() => { if (window.confirm(`${label} van ${formatDayLabel(fd.date)} verwijderen?`)) onDeleteFreeDay(fd.id); }}
+              title="Verwijderen"
+              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const vp = item.vacation;
+    const weekdays = countWeekdays(vp.startDate, vp.endDate);
+    return (
+      <div
+        key={`vac-${vp.id}`}
+        className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-emerald-50/40 dark:bg-emerald-950/15"
+      >
+        <div className="flex items-start sm:items-center gap-3">
+          <div className="p-2 rounded-xl border shrink-0 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-300">
+            <Palmtree className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-sm text-[var(--text-main)]">{vp.description || 'Vakantie'}</span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold border bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50">
+                Vakantie
+              </span>
+            </div>
+            <div className="text-xs text-[var(--text-muted)] mt-0.5">
+              {formatDayLabel(vp.startDate)} t/m {formatDayLabel(vp.endDate)}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 self-end sm:self-auto">
+          <div className="text-right font-mono text-xs text-[var(--text-muted)]">
+            {weekdays} {weekdays === 1 ? 'werkdag' : 'werkdagen'}
+          </div>
+          <button
+            onClick={() => { if (window.confirm(`Vakantie "${vp.description}" verwijderen?`)) onDeleteVacationPeriod(vp.id); }}
+            title="Verwijderen"
+            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   const startEdit = (entry: WorkEntry) => {
     setEditingId(entry.id);
@@ -92,7 +216,9 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
             <h2 className="text-base font-bold text-[var(--text-main)] flex items-center gap-2">
               <span>Geregistreerde Uren</span>
               <span className="text-xs font-normal text-[var(--text-muted)]">
-                ({filteredEntries.length} registraties • Totaal: {formatMinutes(totalFilteredMinutes)})
+                {filter === 'absence'
+                  ? `(${absenceCount} afwezigheden)`
+                  : `(${filteredEntries.length} registraties • ${filter === 'wai' ? 'W-AI' : 'Totaal'}: ${formatMinutes(totalFilteredMinutes)}${absenceCount > 0 ? ` • ${absenceCount} afwezigheden` : ''})`}
               </span>
             </h2>
           </div>
@@ -131,17 +257,41 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
               <GraduationCap className="w-3 h-3" />
               <span>Lesopdracht</span>
             </button>
+            <button
+              onClick={() => setFilter('wai')}
+              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all ${
+                filter === 'wai'
+                  ? 'bg-white dark:bg-slate-700 text-orange-700 dark:text-orange-300 shadow-sm'
+                  : 'text-[var(--text-muted)] hover:text-orange-600'
+              }`}
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>W-AI</span>
+            </button>
+            <button
+              onClick={() => setFilter('absence')}
+              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all ${
+                filter === 'absence'
+                  ? 'bg-white dark:bg-slate-700 text-rose-700 dark:text-rose-300 shadow-sm'
+                  : 'text-[var(--text-muted)] hover:text-rose-600'
+              }`}
+            >
+              <CalendarOff className="w-3 h-3" />
+              <span>Afwezig</span>
+            </button>
           </div>
         </div>
 
         {/* List of Entries */}
-        {filteredEntries.length === 0 ? (
+        {listItems.length === 0 ? (
           <div className="p-8 text-center text-sm text-[var(--text-muted)]">
-            Geen tijdsregistraties gevonden voor het geselecteerde filter.
+            {filter === 'absence' ? 'Geen ziektedagen, vrije dagen of vakanties geregistreerd.' : 'Geen tijdsregistraties gevonden voor het geselecteerde filter.'}
           </div>
         ) : (
           <div className="divide-y divide-[var(--panel-border)]">
-            {filteredEntries.map(entry => {
+            {listItems.map(item => {
+              if (item.kind !== 'work') return renderAbsence(item);
+              const entry = item.entry;
               const category = entry.category || 'ict';
               const catConfig = CATEGORY_CONFIG[category];
               const isEditing = editingId === entry.id;
@@ -170,6 +320,7 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
                         >
                           <option value="ict">ICT-coördinatie (15/21 • overuren)</option>
                           <option value="teaching">Lesopdracht (6/21 • eigen admin)</option>
+                          <option value="wai">W-AI (in totaal, niet ICT)</option>
                         </select>
                       </div>
                       <div>
@@ -228,7 +379,7 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
                   <div className="flex items-start sm:items-center gap-3">
                     {/* Category Icon Badge */}
                     <div className={`p-2 rounded-xl border ${catConfig.badgeBg} ${catConfig.badgeBorder} ${catConfig.badgeText} shrink-0`}>
-                      {category === 'ict' ? <Briefcase className="w-4 h-4" /> : <GraduationCap className="w-4 h-4" />}
+                      {category === 'ict' ? <Briefcase className="w-4 h-4" /> : category === 'wai' ? <Sparkles className="w-4 h-4" /> : <GraduationCap className="w-4 h-4" />}
                     </div>
 
                     <div>
@@ -255,7 +406,7 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
 
                   <div className="flex items-center gap-3 self-end sm:self-auto">
                     <div className="text-right">
-                      <div className={`font-mono font-bold text-sm ${category === 'teaching' ? 'text-purple-700 dark:text-purple-300' : 'text-sky-700 dark:text-sky-300'}`}>
+                      <div className={`font-mono font-bold text-sm ${category === 'teaching' ? 'text-purple-700 dark:text-purple-300' : category === 'wai' ? 'text-orange-700 dark:text-orange-300' : 'text-sky-700 dark:text-sky-300'}`}>
                         {formatMinutes(durationMin)}
                       </div>
                     </div>
@@ -269,7 +420,7 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => onDeleteWorkEntry(entry.id)}
+                        onClick={() => { if (window.confirm(`Registratie van ${formattedDate} (${entry.startTime}-${entry.endTime}) verwijderen?`)) onDeleteWorkEntry(entry.id); }}
                         title="Verwijderen"
                         className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
                       >

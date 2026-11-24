@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Car, Bike, Plus, Trash2, MapPin } from 'lucide-react';
 import { TravelEntry, TransportType } from '../types';
-import { TRANSPORT_RATES, LOCATIONS, ROUTE_DISTANCES } from '../utils/calculations';
+import { TRANSPORT_RATES, LOCATIONS, ROUTE_DISTANCES, getTransportRate, formatRate } from '../utils/calculations';
 
 interface TravelTabProps {
   travelEntries: TravelEntry[];
@@ -21,10 +21,21 @@ export const TravelTab: React.FC<TravelTabProps> = ({
   const [endLoc, setEndLoc] = useState<string>(LOCATIONS[1]);
   const [transportType, setTransportType] = useState<TransportType>('auto');
 
-  const calculatedDistance = ROUTE_DISTANCES[startLoc]?.[endLoc] || 0;
+  const [roundTrip, setRoundTrip] = useState(false);
+
+  // Bugfix: als de vertreklocatie gelijk wordt aan de aankomstlocatie, verdween die optie uit de
+  // lijst maar bleef de state staan -> rit "Campus - Campus" met 0 km werd opgeslagen.
+  useEffect(() => {
+    if (endLoc === startLoc) {
+      setEndLoc(LOCATIONS.find(l => l !== startLoc) || LOCATIONS[0]);
+    }
+  }, [startLoc, endLoc]);
+
+  const oneWayDistance = ROUTE_DISTANCES[startLoc]?.[endLoc] || 0;
+  const calculatedDistance = Math.round(oneWayDistance * (roundTrip ? 2 : 1) * 10) / 10;
 
   const totalKm = travelEntries.reduce((acc, t) => acc + t.distance, 0);
-  const totalComp = travelEntries.reduce((acc, t) => acc + (t.distance * TRANSPORT_RATES[t.type]), 0);
+  const totalComp = travelEntries.reduce((acc, t) => acc + (t.distance * getTransportRate(t.type, t.date)), 0);
 
   return (
     <div className="space-y-6">
@@ -93,7 +104,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
                 }`}
               >
                 <Bike className="w-4 h-4" />
-                <span>Fiets (€ 0,21 / km)</span>
+                <span>Fiets (€ {formatRate(TRANSPORT_RATES.fiets)} / km)</span>
               </button>
             </div>
           </div>
@@ -168,7 +179,12 @@ export const TravelTab: React.FC<TravelTabProps> = ({
               </div>
 
               <input type="hidden" name="distance" value={calculatedDistance} />
-              <input type="hidden" name="description" value={`${startLoc} - ${endLoc}`} />
+              <input type="hidden" name="description" value={`${startLoc} - ${endLoc}${roundTrip ? ' - ' + startLoc : ''}`} />
+
+              <label className="sm:col-span-2 flex items-center gap-2 text-xs text-[var(--text-main)] cursor-pointer">
+                <input type="checkbox" checked={roundTrip} onChange={(e) => setRoundTrip(e.target.checked)} />
+                <span>Heen en terug ({oneWayDistance} km × 2)</span>
+              </label>
 
               <div className="sm:col-span-2 flex justify-between items-center text-xs text-[var(--text-muted)] pt-2 border-t border-[var(--panel-border)]">
                 <span>Berekende afstand: <strong className="font-mono text-sm text-[var(--text-main)]">{calculatedDistance} km</strong></span>
@@ -225,7 +241,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
         ) : (
           <div className="divide-y divide-[var(--panel-border)]">
             {travelEntries.map(entry => {
-              const comp = entry.distance * TRANSPORT_RATES[entry.type];
+              const comp = entry.distance * getTransportRate(entry.type, entry.date);
               return (
                 <div
                   key={entry.id}
@@ -252,7 +268,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
                       </div>
                     </div>
                     <button
-                      onClick={() => onDeleteTravelEntry(entry.id)}
+                      onClick={() => { if (window.confirm(`Rit "${entry.description}" van ${entry.date} verwijderen?`)) onDeleteTravelEntry(entry.id); }}
                       title="Verwijderen"
                       className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
                     >

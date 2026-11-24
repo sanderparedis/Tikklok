@@ -13,7 +13,8 @@ import {
   Tag, 
   FileText,
   HeartPulse,
-  Stethoscope 
+  Stethoscope,
+  Sparkles
 } from 'lucide-react';
 import { WorkCategory, FreeDayType, TimerState, UserScheduleConfig } from '../types';
 import { formatTimer, formatMinutes, formatMonoTime, CATEGORY_CONFIG, toLocalYYYYMMDD, computeScheduleDetails } from '../utils/calculations';
@@ -24,6 +25,7 @@ interface HoursTabProps {
   currentWeekTotalMin: number;
   currentWeekIctMin: number;
   currentWeekTeachingMin: number;
+  currentWeekWaiMin?: number;
   currentTargetMinutes: number;
   progressPercent: number;
   onStartTimer: (category: WorkCategory) => void;
@@ -43,6 +45,7 @@ export const HoursTab: React.FC<HoursTabProps> = ({
   currentWeekTotalMin,
   currentWeekIctMin,
   currentWeekTeachingMin,
+  currentWeekWaiMin = 0,
   currentTargetMinutes,
   progressPercent,
   onStartTimer,
@@ -60,9 +63,11 @@ export const HoursTab: React.FC<HoursTabProps> = ({
   const [manualCategory, setManualCategory] = useState<WorkCategory>('ict');
   const [showConfigForms, setShowConfigForms] = useState(false);
 
-  const activeCategory = timer.category || timerCategory;
+  const activeCategory: WorkCategory = timer.isActive ? (timer.category || 'ict') : timerCategory;
   const activeConfig = CATEGORY_CONFIG[activeCategory];
   const schedule = computeScheduleDetails(scheduleConfig);
+  const CategoryIcon = ({ cat, className }: { cat: WorkCategory; className: string }) =>
+    cat === 'teaching' ? <GraduationCap className={className} /> : cat === 'wai' ? <Sparkles className={className} /> : <Briefcase className={className} />;
 
   return (
     <div className="space-y-6">
@@ -116,6 +121,13 @@ export const HoursTab: React.FC<HoursTabProps> = ({
             <div className="hidden sm:flex items-center gap-1 text-[var(--text-muted)] pl-2 border-l border-[var(--panel-border)]">
               <span>Totaal: <strong className="text-[var(--text-main)]">{formatMinutes(currentWeekTotalMin)}</strong></span>
             </div>
+            {currentWeekWaiMin > 0 && (
+              <div className="flex items-center gap-1.5 text-orange-700 dark:text-orange-300 pl-2 border-l border-[var(--panel-border)]" title="Telt mee in het totaal, niet in ICT of overuren">
+                <Sparkles className="w-4 h-4" />
+                <span>W-AI: <strong>{formatMinutes(currentWeekWaiMin)}</strong></span>
+                <span className="text-[10px] font-normal text-[var(--text-muted)]">(niet ICT)</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -148,7 +160,7 @@ export const HoursTab: React.FC<HoursTabProps> = ({
 
               {/* Active / Current Category Badge */}
               <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${activeConfig.badgeBg} ${activeConfig.badgeText} ${activeConfig.badgeBorder} flex items-center gap-1.5`}>
-                {activeCategory === 'ict' ? <Briefcase className="w-3.5 h-3.5" /> : <GraduationCap className="w-3.5 h-3.5" />}
+                <CategoryIcon cat={activeCategory} className="w-3.5 h-3.5" />
                 {activeConfig.label}
               </span>
             </div>
@@ -157,7 +169,7 @@ export const HoursTab: React.FC<HoursTabProps> = ({
             {!timer.isActive && (
               <div className="mb-5">
                 <label className="label-tiny">Selecteer Categorie voor Timer</label>
-                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-[var(--panel-border)]">
+                <div className="grid grid-cols-3 gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-[var(--panel-border)]">
                   <button
                     type="button"
                     onClick={() => setTimerCategory('ict')}
@@ -182,6 +194,19 @@ export const HoursTab: React.FC<HoursTabProps> = ({
                   >
                     <GraduationCap className="w-3.5 h-3.5" />
                     <span>Lesopdracht</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTimerCategory('wai')}
+                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                      timerCategory === 'wai'
+                        ? 'bg-white dark:bg-slate-700 text-orange-700 dark:text-orange-300 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>W-AI</span>
                   </button>
                 </div>
                 <p className="text-[11px] text-[var(--text-muted)] mt-1.5 italic">
@@ -242,7 +267,7 @@ export const HoursTab: React.FC<HoursTabProps> = ({
             <div>
               <label className="label-tiny">Categorie</label>
               <input type="hidden" name="category" value={manualCategory} />
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setManualCategory('ict')}
@@ -276,6 +301,24 @@ export const HoursTab: React.FC<HoursTabProps> = ({
                   </div>
                   <div className="text-[10px] text-[var(--text-muted)]">
                     6 lesuren (50m) • Eigen administratie
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setManualCategory('wai')}
+                  className={`p-3 rounded-xl border text-left transition-all ${
+                    manualCategory === 'wai'
+                      ? 'border-orange-500 bg-orange-50/70 dark:bg-orange-950/40 text-orange-900 dark:text-orange-200 ring-2 ring-orange-400/20'
+                      : 'border-[var(--panel-border)] bg-[var(--input-bg)] text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-semibold text-xs text-orange-700 dark:text-orange-300 mb-0.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>W-AI</span>
+                  </div>
+                  <div className="text-[10px] text-[var(--text-muted)]">
+                    Aparte opdracht • Telt mee in totaal, niet in ICT
                   </div>
                 </button>
               </div>

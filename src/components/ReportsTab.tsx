@@ -11,10 +11,11 @@ import {
   Layers, 
   Car, 
   CheckCircle2, 
-  Info 
+  Info,
+  Sparkles
 } from 'lucide-react';
 import { SchoolYearData, WorkEntry, TravelEntry, UserScheduleConfig } from '../types';
-import { formatMinutes, formatMonoTime, formatWeekLabel, computeScheduleDetails, TRANSPORT_RATES } from '../utils/calculations';
+import { formatMinutes, formatMonoTime, formatWeekLabel, computeScheduleDetails, getTransportRate, calculateDuration, CATEGORY_CONFIG } from '../utils/calculations';
 import * as XLSX from 'xlsx';
 
 interface MonthlyReportItem {
@@ -23,6 +24,7 @@ interface MonthlyReportItem {
   ictMin: number;
   teachingMin: number;
   totalWorkMin: number;
+  waiMin?: number; // W-AI: zit in totalWorkMin, niet in ictMin
   travelKm: number;
   travelComp: number;
   entriesCount: number;
@@ -68,10 +70,8 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
     // 1. Tijdregistraties sheet
     const workData = workEntries.map(e => {
       const category = e.category || 'ict';
-      const catLabel = category === 'ict' ? 'ICT-coördinatie' : 'Lesopdracht';
-      const [h1, m1] = e.startTime.split(':').map(Number);
-      const [h2, m2] = e.endTime.split(':').map(Number);
-      const min = Math.max(0, (h2 * 60 + m2) - (h1 * 60 + m1) - (e.breakTime || 0));
+      const catLabel = CATEGORY_CONFIG[category]?.label || 'ICT-coördinatie';
+      const min = calculateDuration(e.startTime, e.endTime, e.breakTime || 0);
       return {
         'Datum': e.date,
         'Categorie': catLabel,
@@ -87,13 +87,17 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
     XLSX.utils.book_append_sheet(wb, wsWork, 'Tijdregistraties');
 
     // 2. Verplaatsingen sheet
-    const travelData = travelEntries.map(t => ({
-      'Datum': t.date,
-      'Traject / Omschrijving': t.description,
-      'Vervoertype': t.type === 'auto' ? `Auto (€ ${TRANSPORT_RATES.auto.toString().replace('.', ',')}/km)` : `Fiets (€ ${TRANSPORT_RATES.fiets.toFixed(2).replace('.', ',')}/km)`,
-      'Afstand (km)': t.distance,
-      'Vergoeding (€)': Number((t.distance * TRANSPORT_RATES[t.type]).toFixed(2))
-    }));
+    const travelData = travelEntries.map(t => {
+      const rate = getTransportRate(t.type, t.date);
+      return {
+        'Datum': t.date,
+        'Traject / Omschrijving': t.description,
+        'Vervoertype': t.type === 'auto' ? 'Auto' : 'Fiets',
+        'Tarief (€/km)': rate,
+        'Afstand (km)': t.distance,
+        'Vergoeding (€)': Number((t.distance * rate).toFixed(2))
+      };
+    });
     const wsTravel = XLSX.utils.json_to_sheet(travelData);
     XLSX.utils.book_append_sheet(wb, wsTravel, 'Verplaatsingen');
 
@@ -103,6 +107,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
       'ICT Uren': formatMinutes(m.ictMin),
       'Lesopdracht Uren': formatMinutes(m.teachingMin),
       'Totaal Werkuren': formatMinutes(m.totalWorkMin),
+      'W-AI Uren (in totaal, niet ICT)': formatMinutes(m.waiMin || 0),
       'Verplaatsingen (km)': Number(m.travelKm.toFixed(1)),
       'Vergoeding (€)': Number(m.travelComp.toFixed(2))
     }));
@@ -420,6 +425,17 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                   </span>
                   <span className="font-mono font-bold">{formatMinutes(m.teachingMin)}</span>
                 </div>
+
+                {/* W-AI (zit in Totaal Werk, niet in ICT) */}
+                {(m.waiMin || 0) > 0 && (
+                  <div className="flex justify-between items-center text-orange-700 dark:text-orange-300">
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      W-AI:
+                    </span>
+                    <span className="font-mono font-bold">{formatMinutes(m.waiMin || 0)}</span>
+                  </div>
+                )}
 
                 {/* Total Work */}
                 <div className="flex justify-between items-center pt-1 border-t border-[var(--panel-border)] font-semibold text-[var(--text-main)]">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Briefcase, GraduationCap, Car, Moon, Sun, LogIn, LogOut, TrendingUp, Sliders, HeartPulse } from 'lucide-react';
+import { Clock, Briefcase, GraduationCap, Car, Moon, Sun, LogIn, LogOut, TrendingUp, Sliders, HeartPulse, Sparkles } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { UserScheduleConfig } from '../types';
 import { formatMinutes, formatMonoTime, computeScheduleDetails } from '../utils/calculations';
@@ -17,6 +17,7 @@ interface HeaderStatsProps {
   teachingTargetMin?: number;
   totalWorkedMin: number;
   ictWorkedMin: number;
+  waiWorkedMin?: number;
   teachingWorkedMin: number;
   overtimeBalance: number;
   currentMonthKm: number;
@@ -40,6 +41,7 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
   teachingTargetMin,
   totalWorkedMin,
   ictWorkedMin,
+  waiWorkedMin = 0,
   teachingWorkedMin,
   overtimeBalance,
   currentMonthKm,
@@ -146,28 +148,19 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-        {/* Weekdoel ICT */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
+        {/* Totaal gewerkt (deze week): ICT + lesopdracht + W-AI */}
         <div className="card-panel p-4 flex flex-col justify-between">
           <div className="flex items-center justify-between text-brand-primary mb-2">
-            <span className="label-tiny !mb-0 text-brand-primary font-semibold">
-              ICT Weekdoel ({schedule.fractionLabel})
-            </span>
+            <span className="label-tiny !mb-0 text-brand-primary font-semibold">Gewerkt (wk)</span>
             <Clock className="w-4 h-4 opacity-80" />
           </div>
           <div>
             <div className="text-xl sm:text-2xl font-bold font-mono text-[var(--text-main)]">
-              {formatMonoTime(targetMin)}
+              {formatMonoTime(totalWorkedMin)}
             </div>
-            <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              {reductionMin > 0 ? (
-                <span>
-                  Norm {formatMinutes(schedule.adminTargetMin)} (-{formatMinutes(reductionMin)}{' '}
-                  {sickReductionMin > 0 ? (reductionMin === sickReductionMin ? 'ziekte' : 'ziekte/vrij') : 'vrij'})
-                </span>
-              ) : (
-                <span>Norm: {formatMinutes(schedule.adminTargetMin)} / week</span>
-              )}
+            <div className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate" title="Alle gepresteerde uren deze week (ma-zo): ICT + lesopdracht + W-AI">
+              ICT + les + W-AI
             </div>
           </div>
         </div>
@@ -182,26 +175,13 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
             <div className="text-xl sm:text-2xl font-bold font-mono text-sky-700 dark:text-sky-300">
               {formatMonoTime(ictWorkedMin)}
             </div>
-            <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              {targetMin > 0 ? `${Math.round((ictWorkedMin / targetMin) * 100)}% • Officiële uren` : 'Vrije week'}
-            </div>
-          </div>
-        </div>
-
-        {/* Overurensaldo (ICT) */}
-        <div className="card-panel p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="label-tiny !mb-0 font-semibold text-slate-700 dark:text-slate-300">
-              Overuren ({schoolYear})
-            </span>
-            <TrendingUp className={`w-4 h-4 ${isOvertimePositive ? 'text-emerald-500' : 'text-amber-500'}`} />
-          </div>
-          <div>
-            <div className={`text-xl sm:text-2xl font-bold font-mono ${isOvertimePositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-              {isOvertimePositive ? `+${formatMonoTime(overtimeBalance)}` : formatMonoTime(overtimeBalance)}
-            </div>
-            <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              {isOvertimePositive ? `Positief saldo (${schedule.fractionLabel})` : `Inhaalsaldo (${schedule.fractionLabel})`}
+            <div
+              className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate"
+              title={reductionMin > 0
+                ? `Weekdoel ${formatMinutes(targetMin)}: norm ${formatMinutes(schedule.adminTargetMin)} min ${formatMinutes(reductionMin)} ${sickReductionMin > 0 ? (reductionMin === sickReductionMin ? 'ziekte' : 'ziekte/vrij') : 'vrij'}`
+                : `Weekdoel ${formatMinutes(targetMin)} (norm ${schedule.fractionLabel})`}
+            >
+              {targetMin > 0 ? `${Math.round((ictWorkedMin / targetMin) * 100)}% van ${formatMinutes(targetMin)}${reductionMin > 0 ? (sickReductionMin > 0 ? ' (ziek)' : ' (vrij)') : ''}` : 'Vrije week'}
             </div>
           </div>
         </div>
@@ -228,8 +208,24 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
           </div>
         </div>
 
+        {/* W-AI (deze week): telt mee in totaal gewerkt, niet in ICT */}
+        <div className="card-panel p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-orange-600 dark:text-orange-400 mb-2">
+            <span className="label-tiny !mb-0 text-orange-700 dark:text-orange-300 font-semibold">W-AI (wk)</span>
+            <Sparkles className="w-4 h-4 opacity-80" />
+          </div>
+          <div>
+            <div className="text-xl sm:text-2xl font-bold font-mono text-orange-700 dark:text-orange-300">
+              {formatMonoTime(waiWorkedMin)}
+            </div>
+            <div className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate" title="W-AI telt mee in je totaal gewerkte uren, niet in ICT of overuren.">
+              Telt niet mee in ICT
+            </div>
+          </div>
+        </div>
+
         {/* KM & Vergoeding (Huidige Maand) */}
-        <div className="card-panel p-4 flex flex-col justify-between col-span-2 sm:col-span-1">
+        <div className="card-panel p-4 flex flex-col justify-between">
           <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 mb-2">
             <span className="label-tiny !mb-0 text-emerald-700 dark:text-emerald-300 font-semibold capitalize">
               Verplaatsing ({currentMonthName})
@@ -242,6 +238,24 @@ export const HeaderStats: React.FC<HeaderStatsProps> = ({
             </div>
             <div className="text-[11px] text-[var(--text-muted)] mt-0.5 font-mono">
               {currentMonthKm.toFixed(1)} km ({currentMonthName})
+            </div>
+          </div>
+        </div>
+
+        {/* Overurensaldo (ICT) */}
+        <div className="card-panel p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <span className="label-tiny !mb-0 font-semibold text-slate-700 dark:text-slate-300">
+              Overuren ({schoolYear})
+            </span>
+            <TrendingUp className={`w-4 h-4 ${isOvertimePositive ? 'text-emerald-500' : 'text-amber-500'}`} />
+          </div>
+          <div>
+            <div className={`text-xl sm:text-2xl font-bold font-mono ${isOvertimePositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+              {isOvertimePositive ? `+${formatMonoTime(overtimeBalance)}` : formatMonoTime(overtimeBalance)}
+            </div>
+            <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
+              {isOvertimePositive ? `Positief saldo (${schedule.fractionLabel})` : `Inhaalsaldo (${schedule.fractionLabel})`}
             </div>
           </div>
         </div>

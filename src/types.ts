@@ -1,6 +1,7 @@
 export type TransportType = 'auto' | 'fiets';
 export type TabType = 'hours' | 'travel' | 'reports';
-export type WorkCategory = 'ict' | 'teaching';
+// 'wai' = W-AI: aparte opdracht, pure extra registratie (telt nergens mee: geen ICT, les of overuren)
+export type WorkCategory = 'ict' | 'teaching' | 'wai';
 export type FreeDayType = 'vrije/facultatieve dag' | 'ziek' | 'feestdag';
 
 export interface WorkEntry {
@@ -78,12 +79,29 @@ export interface SchoolYearData {
   weeks: SchoolYearWeekData[];
 }
 
+export interface IctBlock {
+  start: string; // 'HH:MM' of '' (geen ICT)
+  end: string;
+}
+
+/**
+ * ICT-moment(en) van één weekdag. Een lijst blokken laat pauzes toe (bv. 07:50-11:55 en 12:45-16:40);
+ * een lege lijst = geen ICT. Eén los blok is het oudere formaat en blijft geldig.
+ */
+export type IctDay = IctBlock | IctBlock[];
+
 export interface UserScheduleConfig {
   adminNumerator: number; // e.g. 15
   teachingNumerator: number; // e.g. 6
   denominator: number; // e.g. 21
   fulltimeWeekHours: number; // e.g. 36
   teachingLessonsPerDay: Record<number, number>; // 1: 4, 2: 0, 3: 2, 4: 0, 5: 0
+  /**
+   * Vaste ICT-momenten per weekdag (1 = ma ... 5 = vr). Een dag die hier staat krijgt exact die
+   * ICT-tijd (som van de blokken, pauzes tellen niet mee; lege lijst = geen ICT die dag). Dagen die hier niet staan delen de rest van de
+   * ICT-weeknorm. Bepaalt hoeveel het weekdoel daalt bij een ziekte-, vrije of vakantiedag.
+   */
+  fixedIctBlocks?: Record<number, IctDay>;
   updatedAt?: any;
 }
 

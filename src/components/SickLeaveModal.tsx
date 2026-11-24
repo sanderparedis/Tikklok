@@ -56,7 +56,7 @@ export const SickLeaveModal: React.FC<SickLeaveModalProps> = ({
     
     // Safety guard against massive loops if date is inverted or way in the future
     let count = 0;
-    while (cur <= end && count < 60) {
+    while (cur <= end && count < 400) {
       count++;
       const dayOfWeek = cur.getDay();
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
