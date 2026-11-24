@@ -38,7 +38,7 @@ service cloud.firestore {
         && data.startTime is string && data.startTime.size() == 5
         && data.endTime is string && data.endTime.size() == 5
         && data.breakTime is number
-        && (!('category' in data) || data.category in ['ict', 'teaching'])
+        && (!('category' in data) || data.category in ['ict', 'teaching', 'wai'])
         && (!('description' in data) || (data.description is string && data.description.size() <= 500))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
@@ -60,7 +60,7 @@ service cloud.firestore {
       return data.keys().hasAll(['isActive', 'startTime'])
         && data.isActive is bool
         && (data.startTime == null || data.startTime is number)
-        && (!('category' in data) || data.category == null || data.category in ['ict', 'teaching']);
+        && (!('category' in data) || data.category == null || data.category in ['ict', 'teaching', 'wai']);
     }
 
     function isValidFreeDay(data) {

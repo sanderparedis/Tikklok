@@ -9,14 +9,32 @@ import {
   RotateCcw,
   Sparkles,
   School,
-  AlertCircle
+  AlertCircle,
+  Plus,
+  Trash2
 } from 'lucide-react';
-import { UserScheduleConfig } from '../types';
+import { UserScheduleConfig, IctBlock, IctDay } from '../types';
 import { 
   DEFAULT_SCHEDULE_CONFIG, 
   computeScheduleDetails, 
-  formatMinutes 
+  formatMinutes,
+  ictBlockMinutes,
+  getDayBlocks,
+  formatDayBlocks
 } from '../utils/calculations';
+
+type IctMode = 'auto' | 'none' | 'fixed';
+const modeOf = (day?: IctDay): IctMode => {
+  const blocks = getDayBlocks(day);
+  return blocks === undefined ? 'auto' : blocks.length === 0 ? 'none' : 'fixed';
+};
+
+/** Blokken van een dag geldig? Elk blok eind na start, en blokken overlappen niet. */
+const blocksValid = (blocks: IctBlock[]): boolean => {
+  if (blocks.some(b => !(b.start && b.end && b.end > b.start))) return false;
+  const sorted = [...blocks].sort((a, b) => a.start.localeCompare(b.start));
+  return sorted.every((b, i) => i === 0 || b.start >= sorted[i - 1].end);
+};
 
 interface ScheduleConfigModalProps {
   isOpen: boolean;
@@ -42,6 +60,9 @@ export const ScheduleConfigModal: React.FC<ScheduleConfigModalProps> = ({
     4: config.teachingLessonsPerDay?.[4] ?? 0,
     5: config.teachingLessonsPerDay?.[5] ?? 0,
   });
+  const [fixedBlocks, setFixedBlocks] = useState<Record<number, IctDay>>(
+    config.fixedIctBlocks ?? DEFAULT_SCHEDULE_CONFIG.fixedIctBlocks ?? {}
+  );
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -53,8 +74,63 @@ export const ScheduleConfigModal: React.FC<ScheduleConfigModalProps> = ({
     teachingNumerator: teachingNum,
     denominator: denominator,
     fulltimeWeekHours: weekHours,
-    teachingLessonsPerDay: lessonsPerDay
+    teachingLessonsPerDay: lessonsPerDay,
+    fixedIctBlocks: fixedBlocks
   });
+
+  const fixedTotalMin = [1, 2, 3, 4, 5].reduce((sum, d) => sum + ictBlockMinutes(fixedBlocks[d]), 0);
+  const fixedExceedsNorm = fixedTotalMin > previewDetails.adminTargetMin;
+  const invalidBlock = [1, 2, 3, 4, 5].some(d => {
+    const blocks = getDayBlocks(fixedBlocks[d]);
+    return blocks !== undefined && blocks.length > 0 && !blocksValid(blocks);
+  });
+
+  const setDayMode = (day: number, mode: IctMode) => {
+    setFixedBlocks(prev => {
+      const next = { ...prev };
+      if (mode === 'auto') delete next[day];
+      else if (mode === 'none') next[day] = [];
+      else {
+        const existing = getDayBlocks(prev[day]) || [];
+        next[day] = existing.length > 0 ? existing : [{ start: '08:30', end: '12:00' }];
+      }
+      return next;
+    });
+  };
+
+  const setBlockTime = (day: number, index: number, field: 'start' | 'end', value: string) => {
+    setFixedBlocks(prev => {
+      const blocks = [...(getDayBlocks(prev[day]) || [])];
+      blocks[index] = { ...(blocks[index] || { start: '', end: '' }), [field]: value };
+      return { ...prev, [day]: blocks };
+    });
+  };
+
+  // Extra blok na een pauze: start standaard 50 min na het einde van het laatste blok.
+  const addBlock = (day: number) => {
+    setFixedBlocks(prev => {
+      const blocks = [...(getDayBlocks(prev[day]) || [])];
+      const last = blocks[blocks.length - 1];
+      let start = '13:00';
+      let end = '16:00';
+      if (last?.end) {
+        const [h, m] = last.end.split(':').map(Number);
+        const s = Math.min(23 * 60, h * 60 + m + 50);
+        const e = Math.min(23 * 60 + 59, s + 180);
+        const fmt = (t: number) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+        start = fmt(s);
+        end = fmt(e);
+      }
+      return { ...prev, [day]: [...blocks, { start, end }] };
+    });
+  };
+
+  const removeBlock = (day: number, index: number) => {
+    setFixedBlocks(prev => {
+      const blocks = (getDayBlocks(prev[day]) || []).filter((_, i) => i !== index);
+      return { ...prev, [day]: blocks.length > 0 ? blocks : [{ start: '08:30', end: '12:00' }] };
+    });
+  };
 
   const totalLessonsScheduled = [1, 2, 3, 4, 5].reduce(
     (sum, d) => sum + (lessonsPerDay[d] || 0), 
@@ -89,6 +165,9 @@ export const ScheduleConfigModal: React.FC<ScheduleConfigModalProps> = ({
       4: 0,
       5: 0
     });
+    // Het standaardrooster heeft vaste ICT-momenten; andere presets verdelen automatisch.
+    const isStandard = adm === 15 && tch === 6 && denom === 21;
+    setFixedBlocks(isStandard ? { ...(DEFAULT_SCHEDULE_CONFIG.fixedIctBlocks || {}) } : {});
   };
 
   const handleResetDefault = () => {
@@ -103,10 +182,12 @@ export const ScheduleConfigModal: React.FC<ScheduleConfigModalProps> = ({
       4: DEFAULT_SCHEDULE_CONFIG.teachingLessonsPerDay[4] || 0,
       5: DEFAULT_SCHEDULE_CONFIG.teachingLessonsPerDay[5] || 0
     });
+    setFixedBlocks({ ...(DEFAULT_SCHEDULE_CONFIG.fixedIctBlocks || {}) });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (invalidBlock) return;
     setSaving(true);
     try {
       const updated: UserScheduleConfig = {
@@ -115,6 +196,7 @@ export const ScheduleConfigModal: React.FC<ScheduleConfigModalProps> = ({
         denominator: denominator,
         fulltimeWeekHours: weekHours,
         teachingLessonsPerDay: lessonsPerDay,
+        fixedIctBlocks: fixedBlocks,
         updatedAt: new Date().toISOString()
       };
       await onSave(updated);
@@ -396,9 +478,14 @@ export const ScheduleConfigModal: React.FC<ScheduleConfigModalProps> = ({
                         </td>
                         <td className="py-1.5 px-2 text-sky-700 dark:text-sky-400 font-mono font-bold">
                           {formatMinutes(sched.ictMin)}
+                          {sched.ictFixed && (
+                            <span className="ml-1 text-[9px] font-sans font-semibold uppercase text-[var(--text-muted)]">
+                              {sched.ictBlocks && sched.ictBlocks.length > 0 ? `vast ${formatDayBlocks(sched.ictBlocks)}` : 'geen ICT'}
+                            </span>
+                          )}
                         </td>
                         <td className="py-1.5 px-2 text-[var(--text-muted)]">
-                          -{formatMinutes(sched.ictMin)}
+                          {sched.ictMin > 0 ? `-${formatMinutes(sched.ictMin)}` : 'geen'}
                         </td>
                       </tr>
                     );
@@ -406,6 +493,74 @@ export const ScheduleConfigModal: React.FC<ScheduleConfigModalProps> = ({
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* Section 3: Vaste ICT-momenten per weekdag */}
+          <div className="bg-slate-50 dark:bg-slate-800/30 p-4 rounded-xl border border-[var(--panel-border)] space-y-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+              <Clock className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+              <span>3. Vaste ICT-momenten (voor ziekte- en vrije dagen)</span>
+            </h3>
+            <p className="text-xs text-[var(--text-muted)]">
+              Werk je op een dag structureel op vaste uren (of helemaal niet) voor je ICT-opdracht? Stel dat hier in.
+              Met "Blok toevoegen" geef je meerdere blokken op één dag in; de pauze ertussen telt niet mee.
+              Bij een ziekte-, vrije of vakantiedag daalt je weekdoel dan met exact die tijd. De overige ICT-uren
+              worden verdeeld over de dagen op "Automatisch".
+            </p>
+            <div className="space-y-2">
+              {[1, 2, 3, 4, 5].map(d => {
+                const mode = modeOf(fixedBlocks[d]);
+                const sched = previewDetails.daySchedules[d];
+                return (
+                  <div key={d} className="bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-[var(--panel-border)] flex flex-wrap items-center gap-3">
+                    <span className="text-xs font-bold text-[var(--text-main)] w-20 shrink-0">{sched.dayName}</span>
+                    <div className="w-36">
+                      <select
+                        value={mode}
+                        onChange={(e) => setDayMode(d, e.target.value as IctMode)}
+                        className="input-field text-xs py-1.5"
+                      >
+                        <option value="auto">Automatisch</option>
+                        <option value="none">Geen ICT</option>
+                        <option value="fixed">Vast blok</option>
+                      </select>
+                    </div>
+                    {mode === 'fixed' && (
+                      <div className="w-full sm:w-auto sm:flex-1 flex flex-col gap-1.5 text-xs">
+                        {(getDayBlocks(fixedBlocks[d]) || []).map((b, i, arr) => (
+                          <div key={i} className="flex items-center gap-1.5">
+                            <div className="w-28"><input type="time" value={b.start || ''} onChange={(e) => setBlockTime(d, i, 'start', e.target.value)} className="input-field text-xs py-1.5 px-2" /></div>
+                            <span className="text-[var(--text-muted)]">tot</span>
+                            <div className="w-28"><input type="time" value={b.end || ''} onChange={(e) => setBlockTime(d, i, 'end', e.target.value)} className="input-field text-xs py-1.5 px-2" /></div>
+                            {arr.length > 1 && (
+                              <button type="button" onClick={() => removeBlock(d, i)} title="Blok verwijderen" className="p-1 rounded-lg text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => addBlock(d)} className="self-start flex items-center gap-1 text-[11px] font-semibold text-sky-700 dark:text-sky-400 hover:underline">
+                          <Plus className="w-3 h-3" /> Blok toevoegen (na pauze)
+                        </button>
+                      </div>
+                    )}
+                    <span className="ml-auto font-mono text-xs font-bold text-sky-700 dark:text-sky-400">
+                      {formatMinutes(sched.ictMin)} ICT
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {invalidBlock && (
+              <div className="text-xs text-red-600 dark:text-red-400 font-semibold flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" /> Bij een vast blok moet de eindtijd na de starttijd liggen, en blokken op dezelfde dag mogen niet overlappen.
+              </div>
+            )}
+            {fixedExceedsNorm && (
+              <div className="text-xs text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" /> De vaste blokken ({formatMinutes(fixedTotalMin)}) zijn langer dan je ICT-weeknorm ({formatMinutes(previewDetails.adminTargetMin)}).
+              </div>
+            )}
           </div>
 
           {/* Feedback message */}
@@ -437,7 +592,7 @@ export const ScheduleConfigModal: React.FC<ScheduleConfigModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || invalidBlock}
                 className="btn-primary flex items-center gap-1.5 py-2 px-5 text-xs"
               >
                 <Check className="w-4 h-4" />

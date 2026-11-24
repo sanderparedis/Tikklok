@@ -38,8 +38,14 @@ import {
   getSchoolYearForDate, 
   getBaseTargetForSchoolYear, 
   toLocalYYYYMMDD, 
-  isSummerDate,
-  TRANSPORT_RATES,
+  getTransportRate,
+  getMondayStr,
+  getSundayStr,
+  isIctCategory,
+  isWeekendDate,
+  calculateWeekTargetUpTo,
+  formatWeekLabelShort,
+  getSchoolYearBounds,
   DEFAULT_SCHEDULE_CONFIG
 } from './utils/calculations';
 
@@ -50,6 +56,15 @@ import { TravelTab } from './components/TravelTab';
 import { ReportsTab } from './components/ReportsTab';
 import { ScheduleConfigModal } from './components/ScheduleConfigModal';
 import { SickLeaveModal } from './components/SickLeaveModal';
+import { TimerCard } from './components/TimerCard';
+import { ChecksPanel } from './components/ChecksPanel';
+import { findDataIssues, findOverlappingEntries, describeOverlap } from './utils/checks';
+
+const TABS: { id: TabType; short: string; long: string; icon: typeof Clock }[] = [
+  { id: 'hours', short: 'Uren', long: 'Tijdregistratie', icon: Clock },
+  { id: 'travel', short: 'Ritten', long: 'Verplaatsingen', icon: Car },
+  { id: 'reports', short: 'Rapport', long: 'Overuren & Rapporten', icon: BarChart3 }
+];
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 export default function App() {
@@ -86,7 +101,8 @@ export default function App() {
       const cached = localStorage.getItem('mosa_schedule_config');
       if (cached) {
         try {
-          return JSON.parse(cached);
+          const parsed = JSON.parse(cached);
+          return { ...parsed, fixedIctBlocks: parsed.fixedIctBlocks ?? DEFAULT_SCHEDULE_CONFIG.fixedIctBlocks };
         } catch {
           // fallback to default
         }
@@ -268,6 +284,7 @@ export default function App() {
           denominator: typeof d.denominator === 'number' ? d.denominator : DEFAULT_SCHEDULE_CONFIG.denominator,
           fulltimeWeekHours: typeof d.fulltimeWeekHours === 'number' ? d.fulltimeWeekHours : DEFAULT_SCHEDULE_CONFIG.fulltimeWeekHours,
           teachingLessonsPerDay: d.teachingLessonsPerDay || DEFAULT_SCHEDULE_CONFIG.teachingLessonsPerDay,
+          fixedIctBlocks: d.fixedIctBlocks && typeof d.fixedIctBlocks === 'object' ? d.fixedIctBlocks : DEFAULT_SCHEDULE_CONFIG.fixedIctBlocks,
           updatedAt: d.updatedAt || undefined
         };
         setScheduleConfig(loaded);
@@ -300,8 +317,9 @@ export default function App() {
           denominator: newConfig.denominator,
           fulltimeWeekHours: newConfig.fulltimeWeekHours,
           teachingLessonsPerDay: newConfig.teachingLessonsPerDay,
+          fixedIctBlocks: newConfig.fixedIctBlocks || {},
           updatedAt: new Date().toISOString()
-        }, { merge: true });
+        });
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/settings/schedule`);
       }
@@ -323,17 +341,20 @@ export default function App() {
     return Math.max(0, (currentTime - timer.startTime) / 60000);
   }, [timer.isActive, timer.startTime, currentTime]);
 
-  const defaultToday = useMemo(() => toLocalYYYYMMDD(new Date()), []);
+  // "Vandaag" wordt elke minuut herberekend, zodat een app die over middernacht / het weekend
+  // open blijft (bv. op gsm) niet in de vorige dag of week blijft hangen.
+  const [defaultToday, setDefaultToday] = useState(() => toLocalYYYYMMDD(new Date()));
+  useEffect(() => {
+    const id = setInterval(() => {
+      const t = toLocalYYYYMMDD(new Date());
+      setDefaultToday(prev => (prev === t ? prev : t));
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
   const currentSchoolYear = useMemo(() => getSchoolYearForDate(defaultToday), [defaultToday]);
 
   // Monday of the current week
-  const currentMondayStr = useMemo(() => {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    d.setDate(diff);
-    return toLocalYYYYMMDD(d);
-  }, []);
+  const currentMondayStr = useMemo(() => getMondayStr(defaultToday), [defaultToday]);
 
   // Calculate current week target for ICT
   const currentWeekTargetInfo = useMemo(() => {
@@ -341,20 +362,21 @@ export default function App() {
   }, [currentMondayStr, freeDays, vacationPeriods, scheduleConfig]);
 
   // Current week work minutes (ICT vs Teaching)
-  const { currentWeekIctMin, currentWeekTeachingMin } = useMemo(() => {
-    const monday = new Date(currentMondayStr + 'T00:00:00');
-    const friday = new Date(monday);
-    friday.setDate(monday.getDate() + 4);
-    const fridayStr = toLocalYYYYMMDD(friday);
+  const { currentWeekIctMin, currentWeekTeachingMin, currentWeekWaiMin } = useMemo(() => {
+    // Ma t/m zo: weekendwerk telt mee (consistent met het schooljaaroverzicht)
+    const sundayStr = getSundayStr(currentMondayStr);
 
     let ict = 0;
     let teaching = 0;
+    let wai = 0;
 
     workEntries.forEach(e => {
-      if (e.date >= currentMondayStr && e.date <= fridayStr) {
+      if (e.date >= currentMondayStr && e.date <= sundayStr) {
         const dur = calculateDuration(e.startTime, e.endTime, e.breakTime || 0);
         if (e.category === 'teaching') {
           teaching += dur;
+        } else if (e.category === 'wai') {
+          wai += dur;
         } else {
           ict += dur;
         }
@@ -364,70 +386,67 @@ export default function App() {
     if (timer.isActive) {
       if (timer.category === 'teaching') {
         teaching += liveMinutes;
+      } else if (timer.category === 'wai') {
+        wai += liveMinutes;
       } else {
         ict += liveMinutes;
       }
     }
 
-    return { currentWeekIctMin: Math.round(ict), currentWeekTeachingMin: Math.round(teaching) };
+    return { currentWeekIctMin: Math.round(ict), currentWeekTeachingMin: Math.round(teaching), currentWeekWaiMin: Math.round(wai) };
   }, [currentMondayStr, workEntries, timer.isActive, timer.category, liveMinutes]);
 
   // Travel totals for the current month (displayed in header KPI card)
   const currentMonthKey = useMemo(() => defaultToday.substring(0, 7), [defaultToday]);
   const currentMonthName = useMemo(() => {
-    return new Date().toLocaleDateString('nl', { month: 'long' });
-  }, []);
+    return new Date(defaultToday + 'T00:00:00').toLocaleDateString('nl-BE', { month: 'long' });
+  }, [defaultToday]);
 
   const { currentMonthKm, currentMonthTravelComp } = useMemo(() => {
     const monthEntries = travelEntries.filter(t => t.date.startsWith(currentMonthKey));
     const km = monthEntries.reduce((acc, t) => acc + t.distance, 0);
-    const comp = monthEntries.reduce((acc, t) => acc + (t.distance * TRANSPORT_RATES[t.type]), 0);
+    const comp = monthEntries.reduce((acc, t) => acc + (t.distance * getTransportRate(t.type, t.date)), 0);
     return { currentMonthKm: km, currentMonthTravelComp: comp };
   }, [travelEntries, currentMonthKey]);
 
   // Aggregate School Years Data
   const schoolYearsData: SchoolYearData[] = useMemo(() => {
     const syMap: Record<string, {
-      weeks: Record<string, { ict: number; teaching: number }>;
+      weeks: Record<string, { ict: number; teaching: number; weekend: number }>;
     }> = {};
 
     // Collect all Mondays from work entries
     workEntries.forEach(entry => {
-      const d = new Date(entry.date + 'T00:00:00');
-      const day = d.getDay();
-      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-      d.setDate(diff);
-      const monStr = toLocalYYYYMMDD(d);
+      const monStr = getMondayStr(entry.date);
       const sy = getSchoolYearForDate(monStr);
 
       if (!syMap[sy]) {
         syMap[sy] = { weeks: {} };
       }
       if (!syMap[sy].weeks[monStr]) {
-        syMap[sy].weeks[monStr] = { ict: 0, teaching: 0 };
+        syMap[sy].weeks[monStr] = { ict: 0, teaching: 0, weekend: 0 };
       }
       const dur = calculateDuration(entry.startTime, entry.endTime, entry.breakTime || 0);
+      if (isWeekendDate(entry.date)) {
+        syMap[sy].weeks[monStr].weekend += dur;
+      }
       if (entry.category === 'teaching') {
         syMap[sy].weeks[monStr].teaching += dur;
-      } else {
+      } else if (isIctCategory(entry.category)) {
         syMap[sy].weeks[monStr].ict += dur;
-      }
+      } // W-AI telt niet mee in het schooljaaroverzicht
     });
 
     // Collect all Mondays from free days (including sick days)
     freeDays.forEach(fd => {
-      const d = new Date(fd.date + 'T00:00:00');
-      const day = d.getDay();
-      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-      d.setDate(diff);
-      const monStr = toLocalYYYYMMDD(d);
+      const monStr = getMondayStr(fd.date);
       const sy = getSchoolYearForDate(monStr);
 
       if (!syMap[sy]) {
         syMap[sy] = { weeks: {} };
       }
       if (!syMap[sy].weeks[monStr]) {
-        syMap[sy].weeks[monStr] = { ict: 0, teaching: 0 };
+        syMap[sy].weeks[monStr] = { ict: 0, teaching: 0, weekend: 0 };
       }
     });
 
@@ -436,8 +455,28 @@ export default function App() {
       syMap[currentSchoolYear] = { weeks: {} };
     }
     if (!syMap[currentSchoolYear].weeks[currentMondayStr]) {
-      syMap[currentSchoolYear].weeks[currentMondayStr] = { ict: 0, teaching: 0 };
+      syMap[currentSchoolYear].weeks[currentMondayStr] = { ict: 0, teaching: 0, weekend: 0 };
     }
+
+    // Vul ontbrekende weken op tussen de eerste geregistreerde week en de laatste (of huidige) week.
+    // Zonder dit telt een week zonder enige registratie (vergeten in te vullen, of afwezig zonder
+    // vrije dag te boeken) niet mee in het streefdoel en wordt het overurensaldo te rooskleurig.
+    Object.keys(syMap).forEach(sy => {
+      const keys = Object.keys(syMap[sy].weeks).sort();
+      if (keys.length === 0) return;
+      let last = keys[keys.length - 1];
+      if (sy === currentSchoolYear && currentMondayStr > last) last = currentMondayStr;
+      const cur = new Date(keys[0] + 'T00:00:00');
+      let guard = 0;
+      while (toLocalYYYYMMDD(cur) <= last && guard < 60) {
+        const k = toLocalYYYYMMDD(cur);
+        if (!syMap[sy].weeks[k] && getSchoolYearForDate(k) === sy) {
+          syMap[sy].weeks[k] = { ict: 0, teaching: 0, weekend: 0 };
+        }
+        cur.setDate(cur.getDate() + 7);
+        guard++;
+      }
+    });
 
     const result: SchoolYearData[] = Object.keys(syMap)
       .sort((a, b) => b.localeCompare(a))
@@ -449,21 +488,27 @@ export default function App() {
         let totalWorkedIct = 0;
         let totalWorkedTeaching = 0;
         let totalTargetMin = 0;
+        let totalTeachingTargetMin = 0;
         let activeTeachingWeeks = 0;
-        let completedWeeksOvertime = 0;
 
         const weeks: SchoolYearWeekData[] = weekKeys.map(monStr => {
           const wData = syMap[sy].weeks[monStr];
           const targetInfo = calculateWeekTarget(monStr, freeDays, vacationPeriods, scheduleConfig);
-          
+          const isCurrentWeek = isCurrent && monStr === currentMondayStr;
+
+          // Lopende week: doel pro rata t.e.m. vandaag. Afgelopen weken: volledig weekdoel.
+          const upTo = isCurrentWeek
+            ? calculateWeekTargetUpTo(monStr, defaultToday, freeDays, vacationPeriods, scheduleConfig)
+            : { ictTargetMin: targetInfo.targetMin, teachingTargetMin: targetInfo.teachingTargetMin };
+
           let wIct = wData.ict;
           let wTeaching = wData.teaching;
 
-          // Add live timer if current week
-          if (isCurrent && monStr === currentMondayStr && timer.isActive) {
+          // Live timer telt mee in de lopende week
+          if (isCurrentWeek && timer.isActive) {
             if (timer.category === 'teaching') {
               wTeaching += liveMinutes;
-            } else {
+            } else if (isIctCategory(timer.category)) {
               wIct += liveMinutes;
             }
           }
@@ -471,20 +516,17 @@ export default function App() {
           const workedIct = Math.round(wIct);
           const workedTeaching = Math.round(wTeaching);
           const workedTotal = workedIct + workedTeaching;
-          // Optie C: enkel de administratieve uren (ICT 15/21) tellen mee voor de overurenbalans
-          const balanceMin = workedIct - targetInfo.targetMin;
+          // Enkel de administratieve uren (ICT 15/21) tellen mee voor het officiële overurensaldo
+          const balanceMin = workedIct - upTo.ictTargetMin;
+          // Lesopdracht: eigen saldo, los van het officiële saldo
+          const teachingBalanceMin = workedTeaching - upTo.teachingTargetMin;
 
           totalWorkedIct += workedIct;
           totalWorkedTeaching += workedTeaching;
-          totalTargetMin += targetInfo.targetMin;
+          totalTargetMin += upTo.ictTargetMin;
+          totalTeachingTargetMin += upTo.teachingTargetMin;
           if (workedTeaching > 0) {
             activeTeachingWeeks++;
-          }
-
-          if (isCurrent) {
-            if (monStr < currentMondayStr) {
-              completedWeeksOvertime += balanceMin;
-            }
           }
 
           return {
@@ -492,28 +534,26 @@ export default function App() {
             workedIct,
             workedTeaching,
             workedTotal,
-            targetMin: targetInfo.targetMin,
+            targetMin: upTo.ictTargetMin,
+            fullTargetMin: targetInfo.targetMin,
             reductionMin: targetInfo.reductionMin,
             freeDaysCount: targetInfo.freeDaysCount,
             sickDaysCount: targetInfo.sickDaysCount,
             summerDaysCount: targetInfo.summerDaysCount,
-            balanceMin
+            balanceMin,
+            teachingTargetMin: upTo.teachingTargetMin,
+            teachingBalanceMin,
+            weekendMin: Math.round(wData.weekend),
+            isCurrentWeek
           };
         });
 
         const totalWorkedAll = totalWorkedIct + totalWorkedTeaching;
-        
-        // For the current active school year: start at 0 (clean slate on Sep 1) + completed weeks + current week surplus in ICT
-        let overtimeBalance: number;
-        if (isCurrent) {
-          const currentWeekData = weeks.find(w => w.weekKey === currentMondayStr);
-          const currentWeekSurplus = currentWeekData && currentWeekData.workedIct > currentWeekData.targetMin
-            ? currentWeekData.workedIct - currentWeekData.targetMin
-            : 0;
-          overtimeBalance = completedWeeksOvertime + currentWeekSurplus;
-        } else {
-          overtimeBalance = totalWorkedIct - totalTargetMin;
-        }
+
+        // Saldo = som van alle weken, inclusief de lopende week pro rata (t.e.m. vandaag).
+        // Zo tonen het saldo bovenaan, het weekkaartje en de tabel overal hetzelfde.
+        const overtimeBalance = totalWorkedIct - totalTargetMin;
+        const teachingBalance = totalWorkedTeaching - totalTeachingTargetMin;
 
         const weeksCount = weeks.length;
         const divisor = activeTeachingWeeks > 0 ? activeTeachingWeeks : (weeksCount > 0 ? weeksCount : 1);
@@ -527,6 +567,8 @@ export default function App() {
           totalTargetMin,
           overtimeBalance,
           activeOvertime: overtimeBalance,
+          totalTeachingTargetMin,
+          teachingBalance,
           isCurrent,
           weeksCount,
           activeTeachingWeeks,
@@ -537,13 +579,23 @@ export default function App() {
       });
 
     return result;
-  }, [workEntries, currentSchoolYear, currentMondayStr, freeDays, vacationPeriods, timer.isActive, timer.category, liveMinutes, scheduleConfig]);
+  }, [workEntries, currentSchoolYear, currentMondayStr, defaultToday, freeDays, vacationPeriods, timer.isActive, timer.category, liveMinutes, scheduleConfig]);
 
   const currentYearData = schoolYearsData.find(s => s.schoolYear === currentSchoolYear);
   const currentOvertimeBalance = currentYearData?.overtimeBalance || 0;
-  const currentWeekTotalMin = currentWeekIctMin + currentWeekTeachingMin;
+  // Totaal gewerkt = ICT + lesopdracht + W-AI (W-AI telt wel mee in het totaal, niet in ICT/overuren)
+  const currentWeekTotalMin = currentWeekIctMin + currentWeekTeachingMin + currentWeekWaiMin;
 
-  // Last 3 weeks data
+  // Alle weken (over schooljaren heen) op maandag-sleutel, voor de weekkaartjes
+  const weekByKey = useMemo(() => {
+    const map: Record<string, SchoolYearWeekData> = {};
+    schoolYearsData.forEach(sy => sy.weeks.forEach(w => { map[w.weekKey] = w; }));
+    return map;
+  }, [schoolYearsData]);
+
+  const currentWeekData = weekByKey[currentMondayStr];
+
+  // Laatste 3 weken: dezelfde cijfers als in het schooljaaroverzicht (lopende week pro rata)
   const lastThreeWeeks = useMemo(() => {
     const list = [];
     const mon = new Date(currentMondayStr + 'T00:00:00');
@@ -552,57 +604,32 @@ export default function App() {
       const curMon = new Date(mon);
       curMon.setDate(mon.getDate() - (i * 7));
       const monStr = toLocalYYYYMMDD(curMon);
-
+      const w = weekByKey[monStr];
       const targetInfo = calculateWeekTarget(monStr, freeDays, vacationPeriods, scheduleConfig);
-      const friday = new Date(curMon);
-      friday.setDate(curMon.getDate() + 4);
-      const friStr = toLocalYYYYMMDD(friday);
-
-      let wIct = 0;
-      let wTeaching = 0;
-
-      workEntries.forEach(e => {
-        if (e.date >= monStr && e.date <= friStr) {
-          const dur = calculateDuration(e.startTime, e.endTime, e.breakTime || 0);
-          if (e.category === 'teaching') {
-            wTeaching += dur;
-          } else {
-            wIct += dur;
-          }
-        }
-      });
-
-      if (i === 0 && timer.isActive) {
-        if (timer.category === 'teaching') {
-          wTeaching += liveMinutes;
-        } else {
-          wIct += liveMinutes;
-        }
-      }
-
-      const workedIctMin = Math.round(wIct);
-      const workedTeachingMin = Math.round(wTeaching);
-      const workedTotalMin = workedIctMin + workedTeachingMin;
-      // Optie C: enkel de administratieve uren (ICT verdeelsleutel) bepalen het overurensaldo
-      const balanceMin = workedIctMin - targetInfo.targetMin;
-
-      const startLabel = curMon.toLocaleDateString('nl', { day: 'numeric', month: 'short' });
-      const endLabel = friday.toLocaleDateString('nl', { day: 'numeric', month: 'short' });
+      const targetMin = w ? w.targetMin : targetInfo.targetMin;
+      const teachingTargetMin = w ? w.teachingTargetMin : targetInfo.teachingTargetMin;
+      const workedIctMin = w?.workedIct ?? 0;
+      const workedTeachingMin = w?.workedTeaching ?? 0;
 
       list.push({
         mondayStr: monStr,
-        weekLabel: `${startLabel} - ${endLabel}`,
-        targetMin: targetInfo.targetMin,
+        weekLabel: formatWeekLabelShort(monStr),
+        targetMin,
+        fullTargetMin: w?.fullTargetMin ?? targetInfo.targetMin,
         workedIctMin,
         workedTeachingMin,
-        workedTotalMin,
-        balanceMin,
+        workedTotalMin: workedIctMin + workedTeachingMin,
+        balanceMin: w ? w.balanceMin : workedIctMin - targetMin,
+        teachingTargetMin,
+        teachingBalanceMin: w ? w.teachingBalanceMin : workedTeachingMin - teachingTargetMin,
+        weekendMin: w?.weekendMin ?? 0,
+        isCurrentWeek: i === 0,
         freeDaysCount: targetInfo.freeDaysCount
       });
     }
 
     return list;
-  }, [currentMondayStr, freeDays, vacationPeriods, workEntries, timer.isActive, timer.category, liveMinutes, scheduleConfig]);
+  }, [currentMondayStr, weekByKey, freeDays, vacationPeriods, scheduleConfig]);
 
   // Monthly aggregated data
   const monthlyData = useMemo(() => {
@@ -611,6 +638,7 @@ export default function App() {
       ictMin: number;
       teachingMin: number;
       totalWorkMin: number;
+      waiMin: number;
       travelKm: number;
       travelComp: number;
       entriesCount: number;
@@ -621,17 +649,21 @@ export default function App() {
       if (!monthsMap[monthKey]) {
         const d = new Date(e.date + 'T00:00:00');
         monthsMap[monthKey] = {
-          label: d.toLocaleDateString('nl', { month: 'long', year: 'numeric' }),
+          label: d.toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' }),
           ictMin: 0,
           teachingMin: 0,
           totalWorkMin: 0,
+          waiMin: 0,
           travelKm: 0,
           travelComp: 0,
           entriesCount: 0
         };
       }
       const dur = calculateDuration(e.startTime, e.endTime, e.breakTime || 0);
-      if (e.category === 'teaching') {
+      if (e.category === 'wai') {
+        // W-AI: telt mee in totaal werkuren, niet in ICT
+        monthsMap[monthKey].waiMin += dur;
+      } else if (e.category === 'teaching') {
         monthsMap[monthKey].teachingMin += dur;
       } else {
         monthsMap[monthKey].ictMin += dur;
@@ -645,17 +677,18 @@ export default function App() {
       if (!monthsMap[monthKey]) {
         const d = new Date(t.date + 'T00:00:00');
         monthsMap[monthKey] = {
-          label: d.toLocaleDateString('nl', { month: 'long', year: 'numeric' }),
+          label: d.toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' }),
           ictMin: 0,
           teachingMin: 0,
           totalWorkMin: 0,
+          waiMin: 0,
           travelKm: 0,
           travelComp: 0,
           entriesCount: 0
         };
       }
       monthsMap[monthKey].travelKm += t.distance;
-      monthsMap[monthKey].travelComp += (t.distance * TRANSPORT_RATES[t.type]);
+      monthsMap[monthKey].travelComp += (t.distance * getTransportRate(t.type, t.date));
     });
 
     return Object.keys(monthsMap)
@@ -666,11 +699,51 @@ export default function App() {
         ictMin: monthsMap[k].ictMin,
         teachingMin: monthsMap[k].teachingMin,
         totalWorkMin: monthsMap[k].totalWorkMin,
+        waiMin: monthsMap[k].waiMin,
         travelKm: monthsMap[k].travelKm,
         travelComp: monthsMap[k].travelComp,
         entriesCount: monthsMap[k].entriesCount
       }));
   }, [workEntries, travelEntries]);
+
+  // Toon schrijffouten aan de gebruiker i.p.v. een stille, ongevangen exception in de console.
+  const reportError = (err: unknown, op: OperationType, path: string) => {
+    try {
+      handleFirestoreError(err, op, path);
+    } catch {
+      // handleFirestoreError logt en gooit altijd opnieuw; hier vangen we dat op.
+    }
+    setToastNotification({ type: 'error', message: 'Opslaan mislukt. Controleer je verbinding en probeer opnieuw.' });
+  };
+
+  const isValidTimeRange = (start: string, end: string) => Boolean(start && end && end > start);
+
+  // Controle: bestaande problemen in de data (alleen lezen)
+  const dataIssues = useMemo(
+    () => findDataIssues(workEntries, travelEntries, vacationPeriods),
+    [workEntries, travelEntries, vacationPeriods]
+  );
+
+  // Timer loopt nog na 18:00 (of sinds een vorige dag): eenmalige melding per sessie
+  const isTimerLate = useMemo(() => {
+    if (!timer.isActive || !timer.startTime) return false;
+    const now = new Date(currentTime);
+    return now.getHours() >= 18 || toLocalYYYYMMDD(new Date(timer.startTime)) < toLocalYYYYMMDD(now);
+  }, [timer.isActive, timer.startTime, currentTime]);
+  const lateNotifiedFor = React.useRef<number | null>(null);
+  useEffect(() => {
+    if (!isTimerLate || !timer.startTime || lateNotifiedFor.current === timer.startTime) return;
+    lateNotifiedFor.current = timer.startTime;
+    const msg = 'De timer loopt nog na 18:00. Vergeten te stoppen?';
+    setToastNotification({ type: 'info', message: msg });
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        new Notification('Tikklok', { body: msg });
+      }
+    } catch {
+      // meldingen niet beschikbaar: de toast en de badge volstaan
+    }
+  }, [isTimerLate, timer.startTime]);
 
   // Actions
   const handleStartTimer = async (category: WorkCategory) => {
@@ -683,7 +756,7 @@ export default function App() {
         category
       }, { merge: true });
     } catch (e) {
-      handleFirestoreError(e, OperationType.UPDATE, `users/${user.uid}`);
+      reportError(e, OperationType.UPDATE, `users/${user.uid}`);
     }
   };
 
@@ -697,28 +770,47 @@ export default function App() {
       `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
 
     const cat = timer.category || 'ict';
-    const newEntry = {
-      id: entryId,
-      date: toLocalYYYYMMDD(startObj),
-      startTime: formatTime(startObj),
-      endTime: formatTime(now),
-      breakTime: 0,
-      category: cat,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    };
+
+    // Splits de sessie per kalenderdag. Vroeger kreeg een sessie over middernacht een eindtijd
+    // vóór de starttijd en werd ze als 0 minuten opgeslagen (uren kwijt).
+    const segments: { date: string; startTime: string; endTime: string }[] = [];
+    const cursor = new Date(startObj);
+    while (toLocalYYYYMMDD(cursor) < toLocalYYYYMMDD(now) && segments.length < 14) {
+      segments.push({ date: toLocalYYYYMMDD(cursor), startTime: formatTime(cursor), endTime: '23:59' });
+      cursor.setDate(cursor.getDate() + 1);
+      cursor.setHours(0, 0, 0, 0);
+    }
+    segments.push({ date: toLocalYYYYMMDD(now), startTime: formatTime(cursor), endTime: formatTime(now) });
+
+    const totalHours = (now.getTime() - startObj.getTime()) / 3_600_000;
 
     try {
-      const entryRef = doc(db, 'users', user.uid, 'workEntries', entryId);
       const userRef = doc(db, 'users', user.uid);
-      await setDoc(entryRef, newEntry);
+      for (const [i, seg] of segments.entries()) {
+        if (seg.endTime <= seg.startTime) continue; // < 1 minuut: niets opslaan
+        const id = i === 0 ? entryId : crypto.randomUUID();
+        await setDoc(doc(db, 'users', user.uid, 'workEntries', id), {
+          id,
+          ...seg,
+          breakTime: 0,
+          category: cat,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      }
+      if (totalHours > 12) {
+        setToastNotification({
+          type: 'info',
+          message: `De timer liep ${Math.round(totalHours)} uur. Was je vergeten te stoppen? Controleer de registratie.`
+        });
+      }
       await setDoc(userRef, {
         isActive: false,
         startTime: null,
         category: null
       }, { merge: true });
     } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/workEntries/${entryId}`);
+      reportError(e, OperationType.WRITE, `users/${user.uid}/workEntries/${entryId}`);
     }
   };
 
@@ -731,11 +823,23 @@ export default function App() {
     const cat = (formData.get('category') as WorkCategory) || 'ict';
     const desc = (formData.get('description') as string)?.trim();
 
+    const startTime = formData.get('start') as string;
+    const endTime = formData.get('end') as string;
+    if (!isValidTimeRange(startTime, endTime)) {
+      setToastNotification({ type: 'error', message: 'De eindtijd moet na de starttijd liggen.' });
+      return;
+    }
+    const entryDate = formData.get('date') as string;
+    const overlapping = findOverlappingEntries({ date: entryDate, startTime, endTime }, workEntries);
+    if (overlapping.length > 0 && !window.confirm(`${describeOverlap(entryDate, overlapping)}\n\nToch opslaan?`)) {
+      return;
+    }
+
     const newEntry: any = {
       id: entryId,
       date: formData.get('date') as string,
-      startTime: formData.get('start') as string,
-      endTime: formData.get('end') as string,
+      startTime,
+      endTime,
       breakTime: 0,
       category: cat,
       createdAt: serverTimestamp(),
@@ -750,7 +854,7 @@ export default function App() {
       await setDoc(entryRef, newEntry);
       form.reset();
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/workEntries/${entryId}`);
+      reportError(err, OperationType.WRITE, `users/${user.uid}/workEntries/${entryId}`);
     }
   };
 
@@ -759,6 +863,17 @@ export default function App() {
     update: { startTime: string; endTime: string; category: WorkCategory; description?: string }
   ) => {
     if (!user) return;
+    if (!isValidTimeRange(update.startTime, update.endTime)) {
+      setToastNotification({ type: 'error', message: 'De eindtijd moet na de starttijd liggen. Wijziging niet opgeslagen.' });
+      return;
+    }
+    const original = workEntries.find(e => e.id === id);
+    if (original) {
+      const overlapping = findOverlappingEntries({ date: original.date, startTime: update.startTime, endTime: update.endTime }, workEntries, id);
+      if (overlapping.length > 0 && !window.confirm(`${describeOverlap(original.date, overlapping)}\n\nToch opslaan?`)) {
+        return;
+      }
+    }
     try {
       const entryRef = doc(db, 'users', user.uid, 'workEntries', id);
       const payload: any = {
@@ -772,7 +887,7 @@ export default function App() {
       }
       await updateDoc(entryRef, payload);
     } catch (e) {
-      handleFirestoreError(e, OperationType.UPDATE, `users/${user.uid}/workEntries/${id}`);
+      reportError(e, OperationType.UPDATE, `users/${user.uid}/workEntries/${id}`);
     }
   };
 
@@ -781,7 +896,7 @@ export default function App() {
     try {
       await deleteDoc(doc(db, 'users', user.uid, 'workEntries', id));
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/workEntries/${id}`);
+      reportError(e, OperationType.DELETE, `users/${user.uid}/workEntries/${id}`);
     }
   };
 
@@ -792,11 +907,18 @@ export default function App() {
     const formData = new FormData(form);
     const entryId = crypto.randomUUID();
 
+    const distance = Number(formData.get('distance'));
+    const description = ((formData.get('description') as string) || '').trim();
+    if (!Number.isFinite(distance) || distance <= 0 || distance > 1000) {
+      setToastNotification({ type: 'error', message: 'Ongeldige afstand. Kies een ander traject of vul de afstand in.' });
+      return;
+    }
+
     const newEntry = {
       id: entryId,
       date: formData.get('date') as string,
-      description: formData.get('description') as string,
-      distance: Number(formData.get('distance')),
+      description,
+      distance: Math.round(distance * 10) / 10,
       type: formData.get('type') as any,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
@@ -806,7 +928,7 @@ export default function App() {
       await setDoc(doc(db, 'users', user.uid, 'travelEntries', entryId), newEntry);
       form.reset();
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/travelEntries/${entryId}`);
+      reportError(err, OperationType.WRITE, `users/${user.uid}/travelEntries/${entryId}`);
     }
   };
 
@@ -815,7 +937,7 @@ export default function App() {
     try {
       await deleteDoc(doc(db, 'users', user.uid, 'travelEntries', id));
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/travelEntries/${id}`);
+      reportError(e, OperationType.DELETE, `users/${user.uid}/travelEntries/${id}`);
     }
   };
 
@@ -841,7 +963,7 @@ export default function App() {
         const cur = new Date(data.startDate + 'T00:00:00');
         const end = new Date(data.endDate + 'T00:00:00');
         let count = 0;
-        while (cur <= end && count < 60) {
+        while (cur <= end && count < 400) {
           count++;
           const dayOfWeek = cur.getDay();
           if (dayOfWeek >= 1 && dayOfWeek <= 5) {
@@ -859,9 +981,13 @@ export default function App() {
         return;
       }
 
-      const batchPromises = datesToRegister.map(async (dateStr) => {
-        const existing = freeDays.find(fd => fd.date === dateStr && fd.type === 'ziek');
-        if (existing) return;
+      const newDates = datesToRegister.filter(dateStr => !freeDays.some(fd => fd.date === dateStr && fd.type === 'ziek'));
+      if (newDates.length === 0) {
+        setToastNotification({ type: 'info', message: 'Deze ziektedag(en) waren al geregistreerd.' });
+        return;
+      }
+
+      const batchPromises = newDates.map(async (dateStr) => {
         const id = crypto.randomUUID();
         const payload: any = {
           id,
@@ -879,10 +1005,10 @@ export default function App() {
       await Promise.all(batchPromises);
       setToastNotification({
         type: 'success',
-        message: `${datesToRegister.length} ${datesToRegister.length === 1 ? 'ziektedag' : 'ziektedagen'} succesvol geregistreerd!`
+        message: `${newDates.length} ${newDates.length === 1 ? 'ziektedag' : 'ziektedagen'} succesvol geregistreerd!`
       });
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/freeDays`);
+      reportError(err, OperationType.WRITE, `users/${user.uid}/freeDays`);
     }
   };
 
@@ -919,7 +1045,7 @@ export default function App() {
         message: 'Vrije dag / afwezigheid succesvol geregistreerd!'
       });
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/freeDays/${id}`);
+      reportError(err, OperationType.WRITE, `users/${user.uid}/freeDays/${id}`);
     }
   };
 
@@ -932,7 +1058,7 @@ export default function App() {
         message: 'Item succesvol verwijderd.'
       });
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/freeDays/${id}`);
+      reportError(e, OperationType.DELETE, `users/${user.uid}/freeDays/${id}`);
     }
   };
 
@@ -949,10 +1075,17 @@ export default function App() {
     const formData = new FormData(form);
     const id = crypto.randomUUID();
 
+    const startDate = formData.get('startDate') as string;
+    const endDate = formData.get('endDate') as string;
+    if (!startDate || !endDate || endDate < startDate) {
+      setToastNotification({ type: 'error', message: 'De einddatum van de vakantie ligt vóór de startdatum.' });
+      return;
+    }
+
     const newEntry = {
       id,
-      startDate: formData.get('startDate') as string,
-      endDate: formData.get('endDate') as string,
+      startDate,
+      endDate,
       description: formData.get('description') as string,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
@@ -966,7 +1099,7 @@ export default function App() {
         message: 'Vakantieperiode succesvol opgeslagen!'
       });
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/vacationPeriods/${id}`);
+      reportError(err, OperationType.WRITE, `users/${user.uid}/vacationPeriods/${id}`);
     }
   };
 
@@ -975,7 +1108,7 @@ export default function App() {
     try {
       await deleteDoc(doc(db, 'users', user.uid, 'vacationPeriods', id));
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/vacationPeriods/${id}`);
+      reportError(e, OperationType.DELETE, `users/${user.uid}/vacationPeriods/${id}`);
     }
   };
 
@@ -992,7 +1125,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--app-bg)] text-[var(--text-main)] py-6 sm:py-10 px-4 sm:px-6">
+    <div className="min-h-screen bg-[var(--app-bg)] text-[var(--text-main)] py-4 sm:py-10 px-4 sm:px-6 overflow-x-hidden">
       <div className="max-w-6xl mx-auto">
         {/* Top Header & Stats */}
         <HeaderStats
@@ -1008,77 +1141,92 @@ export default function App() {
           teachingTargetMin={currentWeekTargetInfo.teachingTargetMin}
           totalWorkedMin={currentWeekTotalMin}
           ictWorkedMin={currentWeekIctMin}
+          waiWorkedMin={currentWeekWaiMin}
           teachingWorkedMin={currentWeekTeachingMin}
           overtimeBalance={currentOvertimeBalance}
+          weekBalanceMin={currentWeekData?.balanceMin ?? 0}
+          teachingWeekBalanceMin={currentWeekData?.teachingBalanceMin ?? 0}
+          teachingBalance={currentYearData?.teachingBalance ?? 0}
           currentMonthKm={currentMonthKm}
           currentMonthTravelComp={currentMonthTravelComp}
           currentMonthName={currentMonthName}
           scheduleConfig={scheduleConfig}
           onOpenScheduleConfig={() => setIsScheduleModalOpen(true)}
           onOpenSickLeaveModal={() => setIsSickModalOpen(true)}
+          timerSlot={
+            <TimerCard
+              timer={timer}
+              liveMinutes={liveMinutes}
+              onStartTimer={handleStartTimer}
+              onStopTimer={handleStopTimer}
+              isLate={isTimerLate}
+            />
+          }
         />
 
-        {/* Tab Navigation Navigation Bar */}
-        <div className="flex items-center gap-2 mb-6 border-b border-[var(--panel-border)] pb-2 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('hours')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shrink-0 ${
-              activeTab === 'hours'
-                ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/20'
-                : 'text-[var(--text-muted)] hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            <span>Tijdregistratie & Timer</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('travel')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shrink-0 ${
-              activeTab === 'travel'
-                ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/20'
-                : 'text-[var(--text-muted)] hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Car className="w-4 h-4" />
-            <span>Verplaatsingen ({travelEntries.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('reports')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shrink-0 ${
-              activeTab === 'reports'
-                ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/20'
-                : 'text-[var(--text-muted)] hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Overuren & Rapporten</span>
-          </button>
+        {/* Tabs: echte knoppen met role="tab", passen op 375 px */}
+        <div
+          role="tablist"
+          aria-label="Onderdelen"
+          className="grid grid-cols-3 gap-1.5 mb-6 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-[var(--panel-border)]"
+        >
+          {TABS.map(tab => {
+            const selected = activeTab === tab.id;
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                id={`tab-${tab.id}`}
+                aria-selected={selected}
+                aria-controls={`panel-${tab.id}`}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setActiveTab(tab.id)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                  const idx = TABS.findIndex(t => t.id === tab.id);
+                  const next = TABS[(idx + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+                  setActiveTab(next.id);
+                  document.getElementById(`tab-${next.id}`)?.focus();
+                }}
+                className={`flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all min-w-0 ${
+                  selected
+                    ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/20'
+                    : 'text-[var(--text-muted)] hover:bg-white dark:hover:bg-slate-800'
+                }`}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="truncate sm:hidden">{tab.short}</span>
+                <span className="truncate hidden sm:inline">
+                  {tab.long}{tab.id === 'travel' ? ` (${travelEntries.length})` : ''}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Tab Body Content */}
         <div>
           {activeTab === 'hours' && (
-            <div className="space-y-8">
+            <div role="tabpanel" id="panel-hours" aria-labelledby="tab-hours" className="space-y-8">
               <HoursTab
-                timer={timer}
-                liveMinutes={liveMinutes}
                 currentWeekTotalMin={currentWeekTotalMin}
                 currentWeekIctMin={currentWeekIctMin}
                 currentWeekTeachingMin={currentWeekTeachingMin}
+                currentWeekWaiMin={currentWeekWaiMin}
                 currentTargetMinutes={currentWeekTargetInfo.targetMin}
+                currentTargetUpToMin={currentWeekData?.targetMin ?? 0}
+                currentWeekBalanceMin={currentWeekData?.balanceMin ?? 0}
                 progressPercent={progressPercent}
-                onStartTimer={handleStartTimer}
-                onStopTimer={handleStopTimer}
                 onAddManualWorkEntry={handleAddManualWorkEntry}
                 onAddFreeDay={handleAddFreeDay}
                 onAddVacationPeriod={handleAddVacationPeriod}
                 defaultDate={defaultToday}
                 scheduleConfig={scheduleConfig}
-                onOpenScheduleConfig={() => setIsScheduleModalOpen(true)}
-                onOpenSickLeaveModal={() => setIsSickModalOpen(true)}
               />
+
+              <ChecksPanel issues={dataIssues} />
 
               <WorkEntryList
                 workEntries={workEntries}
@@ -1088,20 +1236,25 @@ export default function App() {
                 onUpdateWorkEntry={handleUpdateWorkEntry}
                 onDeleteFreeDay={handleDeleteFreeDay}
                 onDeleteVacationPeriod={handleDeleteVacationPeriod}
+                scheduleConfig={scheduleConfig}
               />
             </div>
           )}
 
           {activeTab === 'travel' && (
+            <div role="tabpanel" id="panel-travel" aria-labelledby="tab-travel">
             <TravelTab
               travelEntries={travelEntries}
+              currentSchoolYear={currentSchoolYear}
               onAddTravelEntry={handleAddTravelEntry}
               onDeleteTravelEntry={handleDeleteTravelEntry}
               defaultDate={defaultToday}
             />
+            </div>
           )}
 
           {activeTab === 'reports' && (
+            <div role="tabpanel" id="panel-reports" aria-labelledby="tab-reports">
             <ReportsTab
               schoolYearsData={schoolYearsData}
               monthlyData={monthlyData}
@@ -1110,6 +1263,7 @@ export default function App() {
               travelEntries={travelEntries}
               scheduleConfig={scheduleConfig}
             />
+            </div>
           )}
         </div>
 

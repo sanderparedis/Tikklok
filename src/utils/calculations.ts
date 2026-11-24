@@ -1,8 +1,41 @@
-import { TransportType, FreeDay, VacationPeriod, WorkCategory, UserScheduleConfig } from '../types';
+import { TransportType, FreeDay, VacationPeriod, WorkCategory, UserScheduleConfig, IctBlock, IctDay } from '../types';
 
-export const TRANSPORT_RATES: Record<TransportType, number> = {
-  auto: 0.4825,
-  fiets: 0.21
+/**
+ * Km-tarieven per periode. Het tarief hangt af van de DATUM VAN DE RIT, niet van vandaag:
+ * zo veranderen oude maanden (en reeds ondertekende onkostennota's) niet als het tarief wijzigt.
+ * Voeg bij elke tariefwijziging een nieuwe regel toe (oplopend op `from`, formaat YYYY-MM-DD),
+ * bv. { from: '2027-09-01', rates: { auto: 0.45, fiets: 0.21 } }.
+ */
+export const RATE_PERIODS: { from: string; rates: Record<TransportType, number> }[] = [
+  { from: '2000-01-01', rates: { auto: 0.4285, fiets: 0.21 } },
+];
+
+export const getTransportRate = (type: TransportType, dateStr: string): number => {
+  let rate = RATE_PERIODS[0].rates[type];
+  for (const p of RATE_PERIODS) {
+    if (dateStr >= p.from) rate = p.rates[type];
+  }
+  return rate ?? 0;
+};
+
+/** Tarieven die vandaag gelden (voor labels in de UI). */
+export const TRANSPORT_RATES: Record<TransportType, number> = RATE_PERIODS[RATE_PERIODS.length - 1].rates;
+
+export const formatRate = (rate: number): string => rate.toString().replace('.', ',');
+
+/** Maandag (YYYY-MM-DD) van de week waarin `dateStr` valt. */
+export const getMondayStr = (dateStr: string): string => {
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDay();
+  d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+  return toLocalYYYYMMDD(d);
+};
+
+/** Zondag (YYYY-MM-DD) van de week die op `mondayStr` begint. Weekendwerk telt mee in die week. */
+export const getSundayStr = (mondayStr: string): string => {
+  const d = new Date(mondayStr + 'T00:00:00');
+  d.setDate(d.getDate() + 6);
+  return toLocalYYYYMMDD(d);
 };
 
 export const LOCATIONS = ['Neeroeteren', 'Campus', 'Kinrooi', 'Maaseik'];
@@ -100,7 +133,9 @@ export interface DaySchedule {
   totalNormMin: number; // 8u = 480 min, 4u = 240 min (geschaald naar 36u week)
   teachingLessons: number; // Aantal lesuren op deze dag
   teachingMin: number; // Minuten lesopdracht (incl. voorbereiding/evaluatie)
-  ictMin: number; // Resterende ICT-minuten op deze dag
+  ictMin: number; // ICT-minuten op deze dag (vast blok of aandeel van de rest)
+  ictFixed: boolean; // true = vast ICT-moment ingesteld voor deze dag
+  ictBlocks?: IctBlock[]; // vaste blokken van deze dag (leeg = geen ICT)
 }
 
 export const DEFAULT_SCHEDULE_CONFIG: UserScheduleConfig = {
@@ -108,8 +143,34 @@ export const DEFAULT_SCHEDULE_CONFIG: UserScheduleConfig = {
   teachingNumerator: 6,
   denominator: 21,
   fulltimeWeekHours: 36,
-  teachingLessonsPerDay: { 1: 4, 2: 0, 3: 2, 4: 0, 5: 0 }
+  teachingLessonsPerDay: { 1: 4, 2: 0, 3: 2, 4: 0, 5: 0 },
+  // Maandag: lessen 08:20-11:55, geen structurele ICT. Woensdag: ICT 07:50-10:15, lessen 10:15-11:55.
+  fixedIctBlocks: {
+    1: { start: '', end: '' },
+    3: { start: '07:50', end: '10:15' }
+  }
 };
+
+/**
+ * Zet de instelling van één dag om naar een lijst blokken.
+ * undefined = automatisch (geen vaste blokken), [] = geen ICT.
+ */
+export const getDayBlocks = (day?: IctDay): IctBlock[] | undefined => {
+  if (day === undefined || day === null) return undefined;
+  const list = Array.isArray(day) ? day : [day];
+  return list.filter(b => b && (b.start || b.end));
+};
+
+/** Totale ICT-tijd van een dag in minuten: som van alle blokken (pauzes ertussen tellen niet mee). */
+export const ictBlockMinutes = (day?: IctDay): number =>
+  (getDayBlocks(day) || []).reduce(
+    (sum, b) => sum + (b.start && b.end ? calculateDuration(b.start, b.end, 0) : 0),
+    0
+  );
+
+/** Leesbare weergave, bv. "07:50-11:55 + 12:45-16:40". */
+export const formatDayBlocks = (day?: IctDay): string =>
+  (getDayBlocks(day) || []).map(b => `${b.start}-${b.end}`).join(' + ');
 
 export interface ScheduleDetails {
   adminNumerator: number;
@@ -170,13 +231,16 @@ export const computeScheduleDetails = (config?: Partial<UserScheduleConfig>): Sc
   };
 
   const daySchedules: Record<number, DaySchedule> = {};
+  const fixedBlocks = config?.fixedIctBlocks || {};
 
+  // Stap 1: lesopdracht per dag + "automatisch" ICT-aandeel (dagnorm min lestijd)
+  const autoIct: Record<number, number> = {};
   for (let d = 1; d <= 5; d++) {
     const isWednesday = d === 3;
     const totalNormMin = isWednesday ? halfDayNorm : fullDayNorm;
     const lessons = teachingLessonsPerDay[d] || 0;
     const teachingMin = Math.min(totalNormMin, Math.round(lessons * minPerLesson));
-    const ictMin = Math.max(0, totalNormMin - teachingMin);
+    autoIct[d] = Math.max(0, totalNormMin - teachingMin);
 
     daySchedules[d] = {
       dayOfWeek: d,
@@ -184,8 +248,35 @@ export const computeScheduleDetails = (config?: Partial<UserScheduleConfig>): Sc
       totalNormMin,
       teachingLessons: lessons,
       teachingMin,
-      ictMin
+      ictMin: autoIct[d],
+      ictFixed: false
     };
+  }
+
+  // Stap 2: vaste ICT-momenten overschrijven hun dag; de rest van de ICT-weeknorm wordt verdeeld
+  // over de overige dagen (naar verhouding van hun automatisch aandeel), zodat de som per week
+  // altijd exact gelijk blijft aan de ICT-norm (een volledige week ziek = doel 0).
+  const fixedDays = [1, 2, 3, 4, 5].filter(d => fixedBlocks[d] !== undefined);
+  if (fixedDays.length > 0) {
+    let fixedTotal = 0;
+    fixedDays.forEach(d => {
+      const min = ictBlockMinutes(fixedBlocks[d]);
+      daySchedules[d].ictMin = min;
+      daySchedules[d].ictFixed = true;
+      daySchedules[d].ictBlocks = getDayBlocks(fixedBlocks[d]) || [];
+      fixedTotal += min;
+    });
+    const autoDays = [1, 2, 3, 4, 5].filter(d => fixedBlocks[d] === undefined);
+    const remaining = Math.max(0, adminTargetMin - fixedTotal);
+    const weightSum = autoDays.reduce((s, d) => s + autoIct[d], 0);
+    let assigned = 0;
+    autoDays.forEach((d, i) => {
+      const share = i === autoDays.length - 1
+        ? remaining - assigned
+        : Math.round(weightSum > 0 ? remaining * autoIct[d] / weightSum : remaining / autoDays.length);
+      daySchedules[d].ictMin = Math.max(0, share);
+      assigned += share;
+    });
   }
 
   return {
@@ -212,13 +303,110 @@ export const getBaseTargetForSchoolYear = (schoolYear?: string, config?: UserSch
   return computeScheduleDetails(config).adminTargetMin;
 };
 
+/** Weeklabel ma t/m zo, bv. "14 sep t/m 20 sep 2026" (weekendwerk telt mee in die week). */
 export const formatWeekLabel = (mondayStr: string): string => {
   const d = new Date(mondayStr + 'T00:00:00');
-  const startStr = d.toLocaleDateString('nl', { day: 'numeric', month: 'short' });
+  const startStr = d.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short' });
   const end = new Date(d);
-  end.setDate(d.getDate() + 4); // Friday
-  const endStr = end.toLocaleDateString('nl', { day: 'numeric', month: 'short', year: 'numeric' });
+  end.setDate(d.getDate() + 6); // zondag
+  const endStr = end.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short', year: 'numeric' });
   return `${startStr} t/m ${endStr}`;
+};
+
+/** Kort weeklabel zonder jaar, bv. "14 sep - 20 sep". */
+export const formatWeekLabelShort = (mondayStr: string): string => {
+  const d = new Date(mondayStr + 'T00:00:00');
+  const end = new Date(d);
+  end.setDate(d.getDate() + 6);
+  const fmt = (x: Date) => x.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short' });
+  return `${fmt(d)} - ${fmt(end)}`;
+};
+
+/** Saldo als tekst: "voor 1u 5m" / "achter 3u 10m" / "op schema". */
+export const formatBalanceText = (minutes: number): string => {
+  const m = Math.round(minutes);
+  if (m === 0) return 'op schema';
+  return m > 0 ? `voor ${formatMinutes(m)}` : `achter ${formatMinutes(-m)}`;
+};
+
+/** Saldo in mono-notatie met teken, bv. "+01:05" / "-03:10". */
+export const formatSignedMono = (minutes: number): string =>
+  minutes >= 0 ? `+${formatMonoTime(minutes)}` : formatMonoTime(minutes);
+
+/** Begin- en einddatum (YYYY-MM-DD) van een schooljaar "2026-2027": 1 sep t/m 31 aug. */
+export const getSchoolYearBounds = (schoolYear: string): { start: string; end: string } => {
+  const y = Number(schoolYear.slice(0, 4));
+  return { start: `${y}-09-01`, end: `${y + 1}-08-31` };
+};
+
+/** Is deze datum een vrije dag, vakantiedag of zomervakantiedag (dan geldt er geen norm)? */
+export const isNonWorkingDate = (
+  dateStr: string,
+  freeDays: FreeDay[],
+  vacationPeriods: VacationPeriod[]
+): boolean =>
+  freeDays.some(fd => fd.date === dateStr) ||
+  vacationPeriods.some(vp => dateStr >= vp.startDate && dateStr <= vp.endDate) ||
+  isSummerDate(dateStr);
+
+/**
+ * Pro-rata doel van een week t.e.m. `uptoDateStr` (inclusief die dag).
+ * = weekdoel min de ICT-/lesminuten van de nog komende werkdagen (na `uptoDateStr`).
+ * Zo is het pro-rata doel op zondag (of later) exact gelijk aan het volledige weekdoel,
+ * en tellen za/zo nooit mee in het doel (weekendwerk telt wel mee in het gewerkte).
+ */
+export const calculateWeekTargetUpTo = (
+  mondayStr: string,
+  uptoDateStr: string,
+  freeDays: FreeDay[],
+  vacationPeriods: VacationPeriod[],
+  userConfig?: UserScheduleConfig
+): { ictTargetMin: number; teachingTargetMin: number; isPartial: boolean } => {
+  const full = calculateWeekTarget(mondayStr, freeDays, vacationPeriods, userConfig);
+  const { daySchedules } = computeScheduleDetails(userConfig);
+  let ictRemaining = 0;
+  let teachingRemaining = 0;
+  const mon = new Date(mondayStr + 'T00:00:00');
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(mon);
+    d.setDate(mon.getDate() + i);
+    const dateStr = toLocalYYYYMMDD(d);
+    if (dateStr <= uptoDateStr) continue;
+    if (isNonWorkingDate(dateStr, freeDays, vacationPeriods)) continue;
+    const sched = daySchedules[d.getDay()];
+    if (sched) {
+      ictRemaining += sched.ictMin;
+      teachingRemaining += sched.teachingMin;
+    }
+  }
+  return {
+    ictTargetMin: Math.max(0, full.targetMin - ictRemaining),
+    teachingTargetMin: Math.max(0, full.teachingTargetMin - teachingRemaining),
+    isPartial: uptoDateStr < getSundayStr(mondayStr)
+  };
+};
+
+/** Bedrag in Belgische notatie: "€ 8,40". */
+export const formatEuro = (amount: number): string =>
+  `€ ${amount.toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Afstand in Belgische notatie: "7,7 km". */
+export const formatKm = (km: number): string =>
+  `${km.toLocaleString('nl-BE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
+
+/** Datum in Belgische notatie: "di 17 nov 2026". */
+export const formatDateBE = (dateStr: string): string =>
+  new Date(dateStr + 'T00:00:00').toLocaleDateString('nl-BE', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+
+/** Is de datum een zaterdag of zondag? */
+export const isWeekendDate = (dateStr: string): boolean => {
+  const day = new Date(dateStr + 'T00:00:00').getDay();
+  return day === 0 || day === 6;
 };
 
 export const calculateWeekTarget = (
@@ -297,6 +485,9 @@ export const calculateWeekTarget = (
   };
 };
 
+/** Telt een registratie mee als ICT? (geen categorie = ICT, voor oude registraties) */
+export const isIctCategory = (c?: WorkCategory | null): boolean => !c || c === 'ict';
+
 export const CATEGORY_CONFIG: Record<WorkCategory, {
   label: string;
   shortLabel: string;
@@ -325,6 +516,16 @@ export const CATEGORY_CONFIG: Record<WorkCategory, {
     badgeBorder: 'border-purple-200 dark:border-purple-800',
     accentColor: '#7C3AED',
     description: '6 lesuren (50 min) & voorbereiding • Eigen administratie (geen overuren)',
+    isOfficial: false
+  },
+  wai: {
+    label: 'W-AI',
+    shortLabel: 'W-AI',
+    badgeBg: 'bg-orange-50 dark:bg-orange-950/40',
+    badgeText: 'text-orange-700 dark:text-orange-300',
+    badgeBorder: 'border-orange-200 dark:border-orange-800',
+    accentColor: '#EA580C',
+    description: 'Aparte opdracht • Telt mee in totaal gewerkte uren, niet in ICT of overuren',
     isOfficial: false
   }
 };

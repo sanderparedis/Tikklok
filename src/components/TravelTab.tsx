@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
-import { Car, Bike, Plus, Trash2, MapPin } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Car, Bike, Plus, Trash2, MapPin, Copy, Check } from 'lucide-react';
+import { buildMonthTravelExport, previousMonthKey } from '../utils/travelExport';
 import { TravelEntry, TransportType } from '../types';
-import { TRANSPORT_RATES, LOCATIONS, ROUTE_DISTANCES } from '../utils/calculations';
+import { TRANSPORT_RATES, LOCATIONS, ROUTE_DISTANCES, getTransportRate, formatRate, getSchoolYearBounds, formatEuro, formatKm, formatDateBE } from '../utils/calculations';
 
 interface TravelTabProps {
   travelEntries: TravelEntry[];
+  currentSchoolYear: string;
   onAddTravelEntry: (e: React.FormEvent<HTMLFormElement>) => void;
   onDeleteTravelEntry: (id: string) => void;
   defaultDate: string;
@@ -12,6 +14,7 @@ interface TravelTabProps {
 
 export const TravelTab: React.FC<TravelTabProps> = ({
   travelEntries,
+  currentSchoolYear,
   onAddTravelEntry,
   onDeleteTravelEntry,
   defaultDate
@@ -21,10 +24,49 @@ export const TravelTab: React.FC<TravelTabProps> = ({
   const [endLoc, setEndLoc] = useState<string>(LOCATIONS[1]);
   const [transportType, setTransportType] = useState<TransportType>('auto');
 
-  const calculatedDistance = ROUTE_DISTANCES[startLoc]?.[endLoc] || 0;
+  const [roundTrip, setRoundTrip] = useState(false);
 
-  const totalKm = travelEntries.reduce((acc, t) => acc + t.distance, 0);
-  const totalComp = travelEntries.reduce((acc, t) => acc + (t.distance * TRANSPORT_RATES[t.type]), 0);
+  // Export voor de maandtaak: standaard de vorige maand
+  const [exportMonth, setExportMonth] = useState(() => previousMonthKey(defaultDate));
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'ok' | 'error'>('idle');
+  const exportData = buildMonthTravelExport(travelEntries, exportMonth);
+  const exportJson = JSON.stringify(exportData);
+
+  const copyMonthJson = async () => {
+    try {
+      await navigator.clipboard.writeText(exportJson);
+      setCopyStatus('ok');
+    } catch {
+      // Geen klembordtoegang: selecteer de tekst zodat je die zelf kan kopiëren
+      const pre = document.getElementById('ritten-json');
+      const sel = window.getSelection();
+      if (pre && sel) {
+        const range = document.createRange();
+        range.selectNodeContents(pre);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      setCopyStatus('error');
+    }
+    window.setTimeout(() => setCopyStatus('idle'), 3000);
+  };
+
+  // Bugfix: als de vertreklocatie gelijk wordt aan de aankomstlocatie, verdween die optie uit de
+  // lijst maar bleef de state staan -> rit "Campus - Campus" met 0 km werd opgeslagen.
+  useEffect(() => {
+    if (endLoc === startLoc) {
+      setEndLoc(LOCATIONS.find(l => l !== startLoc) || LOCATIONS[0]);
+    }
+  }, [startLoc, endLoc]);
+
+  const oneWayDistance = ROUTE_DISTANCES[startLoc]?.[endLoc] || 0;
+  const calculatedDistance = Math.round(oneWayDistance * (roundTrip ? 2 : 1) * 10) / 10;
+
+  // Totalen enkel over het lopende schooljaar (1 sep t/m 31 aug)
+  const syBounds = getSchoolYearBounds(currentSchoolYear);
+  const schoolYearEntries = travelEntries.filter(t => t.date >= syBounds.start && t.date <= syBounds.end);
+  const totalKm = schoolYearEntries.reduce((acc, t) => acc + t.distance, 0);
+  const totalComp = schoolYearEntries.reduce((acc, t) => acc + (t.distance * getTransportRate(t.type, t.date)), 0);
 
   return (
     <div className="space-y-6">
@@ -32,27 +74,27 @@ export const TravelTab: React.FC<TravelTabProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="card-panel p-5">
           <div className="flex items-center justify-between text-brand-primary mb-2">
-            <span className="label-tiny !mb-0 text-brand-primary font-semibold">Totaal Afstand</span>
+            <span className="label-tiny !mb-0 text-brand-primary font-semibold">Afstand schooljaar</span>
             <Car className="w-4 h-4" />
           </div>
           <div className="text-2xl font-bold font-mono text-[var(--text-main)]">
-            {totalKm.toFixed(1)} km
+            {formatKm(totalKm)}
           </div>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Over alle geregistreerde ritten
+            Schooljaar {currentSchoolYear} ({schoolYearEntries.length} ritten)
           </p>
         </div>
 
         <div className="card-panel p-5">
           <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 mb-2">
-            <span className="label-tiny !mb-0 text-emerald-700 dark:text-emerald-300 font-semibold">Totaal Vergoeding</span>
+            <span className="label-tiny !mb-0 text-emerald-700 dark:text-emerald-300 font-semibold">Vergoeding schooljaar</span>
             <Bike className="w-4 h-4" />
           </div>
           <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
-            € {totalComp.toFixed(2)}
+            {formatEuro(totalComp)}
           </div>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Auto (€ {TRANSPORT_RATES.auto.toString().replace('.', ',')}/km) • Fiets (€ {TRANSPORT_RATES.fiets.toFixed(2).replace('.', ',')}/km)
+            Auto (€ {formatRate(TRANSPORT_RATES.auto)}/km) • Fiets (€ {formatRate(TRANSPORT_RATES.fiets)}/km)
           </p>
         </div>
       </div>
@@ -80,7 +122,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
                 }`}
               >
                 <Car className="w-4 h-4" />
-                <span>Auto (€ {TRANSPORT_RATES.auto.toString().replace('.', ',')} / km)</span>
+                <span>Auto (€ {formatRate(TRANSPORT_RATES.auto)} / km)</span>
               </button>
 
               <button
@@ -93,7 +135,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
                 }`}
               >
                 <Bike className="w-4 h-4" />
-                <span>Fiets (€ 0,21 / km)</span>
+                <span>Fiets (€ {formatRate(TRANSPORT_RATES.fiets)} / km)</span>
               </button>
             </div>
           </div>
@@ -168,11 +210,16 @@ export const TravelTab: React.FC<TravelTabProps> = ({
               </div>
 
               <input type="hidden" name="distance" value={calculatedDistance} />
-              <input type="hidden" name="description" value={`${startLoc} - ${endLoc}`} />
+              <input type="hidden" name="description" value={`${startLoc} - ${endLoc}${roundTrip ? ' - ' + startLoc : ''}`} />
+
+              <label className="sm:col-span-2 flex items-center gap-2 text-xs text-[var(--text-main)] cursor-pointer">
+                <input type="checkbox" checked={roundTrip} onChange={(e) => setRoundTrip(e.target.checked)} />
+                <span>Heen en terug ({formatKm(oneWayDistance)} × 2)</span>
+              </label>
 
               <div className="sm:col-span-2 flex justify-between items-center text-xs text-[var(--text-muted)] pt-2 border-t border-[var(--panel-border)]">
-                <span>Berekende afstand: <strong className="font-mono text-sm text-[var(--text-main)]">{calculatedDistance} km</strong></span>
-                <span>Vergoeding: <strong className="font-mono text-sm text-emerald-600 dark:text-emerald-400">€ {(calculatedDistance * TRANSPORT_RATES[transportType]).toFixed(2)}</strong></span>
+                <span>Berekende afstand: <strong className="font-mono text-sm text-[var(--text-main)]">{formatKm(calculatedDistance)}</strong></span>
+                <span>Vergoeding: <strong className="font-mono text-sm text-emerald-600 dark:text-emerald-400">{formatEuro(calculatedDistance * TRANSPORT_RATES[transportType])}</strong></span>
               </div>
             </div>
           ) : (
@@ -210,6 +257,49 @@ export const TravelTab: React.FC<TravelTabProps> = ({
         </form>
       </div>
 
+      {/* Export voor de maandtaak (onkostennota) */}
+      <section aria-labelledby="export-title" className="card-panel p-4 sm:p-6 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3 justify-between">
+          <div>
+            <h2 id="export-title" className="text-sm font-bold text-[var(--text-main)]">Maand exporteren</h2>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+              {exportData.ritten.length} {exportData.ritten.length === 1 ? 'rit' : 'ritten'} • {formatEuro(exportData.totaal_eur)}
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-end gap-2 w-full sm:w-auto">
+            <div className="w-full sm:w-44">
+              <label htmlFor="export-month" className="label-tiny">Maand</label>
+              <input
+                id="export-month"
+                type="month"
+                value={exportMonth}
+                onChange={(e) => e.target.value && setExportMonth(e.target.value)}
+                className="input-field py-2"
+              />
+            </div>
+            <button
+              type="button"
+              id="kopieer-maand-json"
+              onClick={copyMonthJson}
+              className="btn-primary flex items-center justify-center gap-2 py-2.5 whitespace-nowrap w-full sm:w-auto"
+            >
+              {copyStatus === 'ok' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              <span>{copyStatus === 'ok' ? 'Gekopieerd' : 'Kopieer maand als JSON'}</span>
+            </button>
+          </div>
+        </div>
+        {copyStatus === 'error' && (
+          <p role="status" className="text-xs text-amber-700 dark:text-amber-300">
+            Kopiëren naar het klembord lukte niet; de JSON hieronder is geselecteerd.
+          </p>
+        )}
+        <pre
+          id="ritten-json"
+          data-maand={exportMonth}
+          className="text-[11px] font-mono p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-[var(--panel-border)] text-[var(--text-main)] whitespace-pre-wrap break-all max-h-48 overflow-auto"
+        >{exportJson}</pre>
+      </section>
+
       {/* Travel Entries List */}
       <div className="card-panel overflow-hidden">
         <div className="p-4 border-b border-[var(--panel-border)]">
@@ -225,7 +315,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
         ) : (
           <div className="divide-y divide-[var(--panel-border)]">
             {travelEntries.map(entry => {
-              const comp = entry.distance * TRANSPORT_RATES[entry.type];
+              const comp = entry.distance * getTransportRate(entry.type, entry.date);
               return (
                 <div
                   key={entry.id}
@@ -240,19 +330,19 @@ export const TravelTab: React.FC<TravelTabProps> = ({
                         {entry.description}
                       </div>
                       <div className="text-xs text-[var(--text-muted)]">
-                        {entry.date} • {entry.type === 'auto' ? 'Auto' : 'Fiets'} • {entry.distance} km
+                        {formatDateBE(entry.date)} • {entry.type === 'auto' ? 'Auto' : 'Fiets'} • {formatKm(entry.distance)}
                       </div>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <div className="font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                        € {comp.toFixed(2)}
+                      <div className="font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                        {formatEuro(comp)}
                       </div>
                     </div>
                     <button
-                      onClick={() => onDeleteTravelEntry(entry.id)}
+                      onClick={() => { if (window.confirm(`Rit "${entry.description}" van ${formatDateBE(entry.date)} verwijderen?`)) onDeleteTravelEntry(entry.id); }}
                       title="Verwijderen"
                       className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
                     >

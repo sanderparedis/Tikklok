@@ -42,7 +42,7 @@ export const SickLeaveModal: React.FC<SickLeaveModalProps> = ({
       const daySchedule = schedule.daySchedules[dayOfWeek] || { ictMin: 0, teachingMin: 0, totalMin: 0 };
       return [{
         dateStr: startDate,
-        dayName: d.toLocaleDateString('nl', { weekday: 'long', day: 'numeric', month: 'short' }),
+        dayName: d.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'short' }),
         dayOfWeek,
         isWeekend,
         ictMin: isWeekend ? 0 : daySchedule.ictMin,
@@ -56,7 +56,7 @@ export const SickLeaveModal: React.FC<SickLeaveModalProps> = ({
     
     // Safety guard against massive loops if date is inverted or way in the future
     let count = 0;
-    while (cur <= end && count < 60) {
+    while (cur <= end && count < 400) {
       count++;
       const dayOfWeek = cur.getDay();
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
@@ -64,7 +64,7 @@ export const SickLeaveModal: React.FC<SickLeaveModalProps> = ({
       const daySchedule = schedule.daySchedules[dayOfWeek] || { ictMin: 0, teachingMin: 0, totalMin: 0 };
       list.push({
         dateStr,
-        dayName: cur.toLocaleDateString('nl', { weekday: 'short', day: 'numeric', month: 'short' }),
+        dayName: cur.toLocaleDateString('nl-BE', { weekday: 'short', day: 'numeric', month: 'short' }),
         dayOfWeek,
         isWeekend,
         ictMin: isWeekend ? 0 : daySchedule.ictMin,

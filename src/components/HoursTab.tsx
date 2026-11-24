@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import { 
-  Play, 
-  Square, 
   Plus, 
   Clock, 
   Calendar, 
@@ -12,58 +10,48 @@ import {
   Check, 
   Tag, 
   FileText,
-  HeartPulse,
-  Stethoscope 
+  Sparkles
 } from 'lucide-react';
-import { WorkCategory, FreeDayType, TimerState, UserScheduleConfig } from '../types';
-import { formatTimer, formatMinutes, formatMonoTime, CATEGORY_CONFIG, toLocalYYYYMMDD, computeScheduleDetails } from '../utils/calculations';
+import { WorkCategory, UserScheduleConfig } from '../types';
+import { formatMinutes, formatMonoTime, CATEGORY_CONFIG, toLocalYYYYMMDD, computeScheduleDetails, formatBalanceText } from '../utils/calculations';
 
 interface HoursTabProps {
-  timer: TimerState;
-  liveMinutes: number;
   currentWeekTotalMin: number;
   currentWeekIctMin: number;
   currentWeekTeachingMin: number;
+  currentWeekWaiMin?: number;
   currentTargetMinutes: number;
+  /** Pro-rata doel t.e.m. vandaag en het bijhorende saldo (zelfde cijfer als in het rapport). */
+  currentTargetUpToMin?: number;
+  currentWeekBalanceMin?: number;
   progressPercent: number;
-  onStartTimer: (category: WorkCategory) => void;
-  onStopTimer: () => void;
   onAddManualWorkEntry: (e: React.FormEvent<HTMLFormElement>) => void;
   onAddFreeDay: (e: React.FormEvent<HTMLFormElement>) => void;
   onAddVacationPeriod: (e: React.FormEvent<HTMLFormElement>) => void;
   defaultDate: string;
   scheduleConfig?: UserScheduleConfig;
-  onOpenScheduleConfig?: () => void;
-  onOpenSickLeaveModal?: () => void;
 }
 
 export const HoursTab: React.FC<HoursTabProps> = ({
-  timer,
-  liveMinutes,
   currentWeekTotalMin,
   currentWeekIctMin,
   currentWeekTeachingMin,
+  currentWeekWaiMin = 0,
   currentTargetMinutes,
+  currentTargetUpToMin = 0,
+  currentWeekBalanceMin = 0,
   progressPercent,
-  onStartTimer,
-  onStopTimer,
   onAddManualWorkEntry,
   onAddFreeDay,
   onAddVacationPeriod,
   defaultDate,
-  scheduleConfig,
-  onOpenScheduleConfig,
-  onOpenSickLeaveModal
+  scheduleConfig
 }) => {
   // Local state for selecting category before starting timer
-  const [timerCategory, setTimerCategory] = useState<WorkCategory>('ict');
   const [manualCategory, setManualCategory] = useState<WorkCategory>('ict');
   const [showConfigForms, setShowConfigForms] = useState(false);
 
-  const activeCategory = timer.category || timerCategory;
-  const activeConfig = CATEGORY_CONFIG[activeCategory];
   const schedule = computeScheduleDetails(scheduleConfig);
-
   return (
     <div className="space-y-6">
       {/* 1. Weekly Progress Bar & Focus Indicator */}
@@ -72,40 +60,27 @@ export const HoursTab: React.FC<HoursTabProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="label-tiny">Voortgang Administratieve Uren (ICT-coördinatie - {schedule.fractionLabel})</span>
-              {onOpenScheduleConfig && (
-                <button
-                  type="button"
-                  onClick={onOpenScheduleConfig}
-                  className="text-[10px] text-brand-primary hover:underline font-semibold -mt-1.5"
-                >
-                  Wijzig verdeelsleutel
-                </button>
-              )}
             </div>
             <div className="text-lg font-bold text-[var(--text-main)] flex items-center gap-2 flex-wrap">
               <span className="text-sky-700 dark:text-sky-300 font-mono">{formatMinutes(currentWeekIctMin)}</span>
               <span className="text-sm font-normal text-[var(--text-muted)]">
                 van {formatMinutes(currentTargetMinutes)} doel ({schedule.fractionLabel})
               </span>
-              {currentWeekIctMin > currentTargetMinutes && (
-                <span className="text-xs px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold">
-                  +{formatMinutes(currentWeekIctMin - currentTargetMinutes)} overuren
+              {currentTargetMinutes > 0 && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-md font-semibold ${
+                    currentWeekBalanceMin >= 0
+                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                  }`}
+                  title={`Doel t.e.m. vandaag: ${formatMinutes(currentTargetUpToMin)}`}
+                >
+                  {formatBalanceText(currentWeekBalanceMin)} (t.e.m. vandaag)
                 </span>
               )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
-            {onOpenSickLeaveModal && (
-              <button
-                type="button"
-                onClick={onOpenSickLeaveModal}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-300 dark:border-rose-900/60 bg-rose-50/80 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all text-xs font-semibold shadow-2xs"
-                title="Meld ziektedag of -periode"
-              >
-                <HeartPulse className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
-                <span>Ziektedag Ingeven</span>
-              </button>
-            )}
             {schedule.teachingNumerator > 0 && (
               <div className="flex items-center gap-1.5 text-purple-700 dark:text-purple-300">
                 <GraduationCap className="w-4 h-4" />
@@ -116,6 +91,13 @@ export const HoursTab: React.FC<HoursTabProps> = ({
             <div className="hidden sm:flex items-center gap-1 text-[var(--text-muted)] pl-2 border-l border-[var(--panel-border)]">
               <span>Totaal: <strong className="text-[var(--text-main)]">{formatMinutes(currentWeekTotalMin)}</strong></span>
             </div>
+            {currentWeekWaiMin > 0 && (
+              <div className="flex items-center gap-1.5 text-orange-700 dark:text-orange-300 pl-2 border-l border-[var(--panel-border)]" title="Telt mee in het totaal, niet in ICT of overuren">
+                <Sparkles className="w-4 h-4" />
+                <span>W-AI: <strong>{formatMinutes(currentWeekWaiMin)}</strong></span>
+                <span className="text-[10px] font-normal text-[var(--text-muted)]">(niet ICT)</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -133,102 +115,10 @@ export const HoursTab: React.FC<HoursTabProps> = ({
         </div>
       </div>
 
-      {/* 2. Dual Grid: Live Timer Card & Handmatige Invoer */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Live Timer Card */}
-        <div className="lg:col-span-5 card-panel p-6 flex flex-col justify-between relative overflow-hidden border-2 border-brand-primary/20">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className={`w-2.5 h-2.5 rounded-full ${timer.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-                <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                  {timer.isActive ? 'Actieve Tijdregistratie' : 'Live Timer'}
-                </span>
-              </div>
-
-              {/* Active / Current Category Badge */}
-              <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${activeConfig.badgeBg} ${activeConfig.badgeText} ${activeConfig.badgeBorder} flex items-center gap-1.5`}>
-                {activeCategory === 'ict' ? <Briefcase className="w-3.5 h-3.5" /> : <GraduationCap className="w-3.5 h-3.5" />}
-                {activeConfig.label}
-              </span>
-            </div>
-
-            {/* Category Selector (when not running) */}
-            {!timer.isActive && (
-              <div className="mb-5">
-                <label className="label-tiny">Selecteer Categorie voor Timer</label>
-                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-[var(--panel-border)]">
-                  <button
-                    type="button"
-                    onClick={() => setTimerCategory('ict')}
-                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
-                      timerCategory === 'ict'
-                        ? 'bg-white dark:bg-slate-700 text-sky-700 dark:text-sky-300 shadow-sm'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <Briefcase className="w-3.5 h-3.5" />
-                    <span>ICT-coördinatie</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTimerCategory('teaching')}
-                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
-                      timerCategory === 'teaching'
-                        ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <GraduationCap className="w-3.5 h-3.5" />
-                    <span>Lesopdracht</span>
-                  </button>
-                </div>
-                <p className="text-[11px] text-[var(--text-muted)] mt-1.5 italic">
-                  {CATEGORY_CONFIG[timerCategory].description}
-                </p>
-              </div>
-            )}
-
-            {/* Timer Display */}
-            <div className="text-center py-4 sm:py-6">
-              <div className="font-mono text-4xl sm:text-5xl font-bold tracking-tight text-[var(--text-main)]">
-                {formatTimer(liveMinutes)}
-              </div>
-              <p className="text-xs text-[var(--text-muted)] mt-2">
-                {timer.isActive
-                  ? `Bezig met ${activeConfig.label.toLowerCase()} sinds ${new Date(timer.startTime!).toLocaleTimeString('nl', { hour: '2-digit', minute: '2-digit' })}`
-                  : 'Druk op start om de sessie live bij te houden'}
-              </p>
-            </div>
-          </div>
-
-          {/* Action Button */}
-          <div className="mt-4">
-            {timer.isActive ? (
-              <button
-                type="button"
-                onClick={onStopTimer}
-                className="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/20 active:scale-[0.99] transition-all text-sm"
-              >
-                <Square className="w-4 h-4 fill-current" />
-                <span>Stop Timer & Registreer ({activeConfig.shortLabel})</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onStartTimer(timerCategory)}
-                className="w-full py-3.5 bg-brand-primary hover:brightness-110 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-brand-primary/20 active:scale-[0.99] transition-all text-sm"
-              >
-                <Play className="w-4 h-4 fill-current" />
-                <span>Start Live Timer ({CATEGORY_CONFIG[timerCategory].shortLabel})</span>
-              </button>
-            )}
-          </div>
-        </div>
-
+      {/* 2. Handmatige invoer (de live timer staat bovenaan de pagina) */}
+      <div>
         {/* Manual Time Entry Form */}
-        <div className="lg:col-span-7 card-panel p-6">
+        <div className="card-panel p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Plus className="w-4 h-4 text-brand-primary" />
@@ -242,7 +132,7 @@ export const HoursTab: React.FC<HoursTabProps> = ({
             <div>
               <label className="label-tiny">Categorie</label>
               <input type="hidden" name="category" value={manualCategory} />
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setManualCategory('ict')}
@@ -276,6 +166,24 @@ export const HoursTab: React.FC<HoursTabProps> = ({
                   </div>
                   <div className="text-[10px] text-[var(--text-muted)]">
                     6 lesuren (50m) • Eigen administratie
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setManualCategory('wai')}
+                  className={`p-3 rounded-xl border text-left transition-all ${
+                    manualCategory === 'wai'
+                      ? 'border-orange-500 bg-orange-50/70 dark:bg-orange-950/40 text-orange-900 dark:text-orange-200 ring-2 ring-orange-400/20'
+                      : 'border-[var(--panel-border)] bg-[var(--input-bg)] text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-semibold text-xs text-orange-700 dark:text-orange-300 mb-0.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>W-AI</span>
+                  </div>
+                  <div className="text-[10px] text-[var(--text-muted)]">
+                    Aparte opdracht • Telt mee in totaal, niet in ICT
                   </div>
                 </button>
               </div>
@@ -357,33 +265,10 @@ export const HoursTab: React.FC<HoursTabProps> = ({
         </button>
 
         {showConfigForms && (
-          <div className="mt-5 pt-4 border-t border-[var(--panel-border)] grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Card 1: Ziektedag(en) */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-rose-800 dark:text-rose-300 flex items-center gap-2">
-                <HeartPulse className="w-3.5 h-3.5 text-rose-500" />
-                <span>Ziektedagen</span>
-              </h3>
-              <div className="p-4 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/40 dark:bg-rose-950/20 space-y-3 flex flex-col justify-between h-[calc(100%-2rem)]">
-                <div>
-                  <p className="text-xs text-[var(--text-muted)] mb-2">
-                    Meld een enkele ziektedag of een aaneengesloten periode. Je te presteren weeknorm wordt automatisch verminderd.
-                  </p>
-                  <div className="text-[11px] text-rose-700 dark:text-rose-300 font-medium bg-rose-100/60 dark:bg-rose-900/30 p-2 rounded-lg">
-                    Ondersteunt zowel 1 dag als periodes (van ... t/m ...) met automatische weekendfiltering.
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={onOpenSickLeaveModal}
-                  className="w-full py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center justify-center gap-2"
-                >
-                  <HeartPulse className="w-4 h-4" />
-                  <span>Ziektedag Ingeven</span>
-                </button>
-              </div>
-            </div>
-
+          <div className="mt-5 pt-4 border-t border-[var(--panel-border)] grid grid-cols-1 md:grid-cols-2 gap-6">
+            <p className="md:col-span-2 text-xs text-[var(--text-muted)]">
+              Ziektedagen geef je in via de knop <strong>Ziek</strong> bovenaan; de verdeelsleutel wijzig je via <strong>Verdeelsleutel</strong>.
+            </p>
             {/* Card 2: Vrije dag / Feestdag toevoegen */}
             <div className="space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-2">
