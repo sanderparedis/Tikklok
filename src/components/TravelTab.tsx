@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Car, Bike, Plus, Trash2, MapPin } from 'lucide-react';
+import { Car, Bike, Plus, Trash2, MapPin, Copy, Check } from 'lucide-react';
+import { buildMonthTravelExport, previousMonthKey } from '../utils/travelExport';
 import { TravelEntry, TransportType } from '../types';
 import { TRANSPORT_RATES, LOCATIONS, ROUTE_DISTANCES, getTransportRate, formatRate, getSchoolYearBounds, formatEuro, formatKm, formatDateBE } from '../utils/calculations';
 
@@ -24,6 +25,31 @@ export const TravelTab: React.FC<TravelTabProps> = ({
   const [transportType, setTransportType] = useState<TransportType>('auto');
 
   const [roundTrip, setRoundTrip] = useState(false);
+
+  // Export voor de maandtaak: standaard de vorige maand
+  const [exportMonth, setExportMonth] = useState(() => previousMonthKey(defaultDate));
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'ok' | 'error'>('idle');
+  const exportData = buildMonthTravelExport(travelEntries, exportMonth);
+  const exportJson = JSON.stringify(exportData);
+
+  const copyMonthJson = async () => {
+    try {
+      await navigator.clipboard.writeText(exportJson);
+      setCopyStatus('ok');
+    } catch {
+      // Geen klembordtoegang: selecteer de tekst zodat je die zelf kan kopiëren
+      const pre = document.getElementById('ritten-json');
+      const sel = window.getSelection();
+      if (pre && sel) {
+        const range = document.createRange();
+        range.selectNodeContents(pre);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      setCopyStatus('error');
+    }
+    window.setTimeout(() => setCopyStatus('idle'), 3000);
+  };
 
   // Bugfix: als de vertreklocatie gelijk wordt aan de aankomstlocatie, verdween die optie uit de
   // lijst maar bleef de state staan -> rit "Campus - Campus" met 0 km werd opgeslagen.
@@ -231,6 +257,49 @@ export const TravelTab: React.FC<TravelTabProps> = ({
         </form>
       </div>
 
+      {/* Export voor de maandtaak (onkostennota) */}
+      <section aria-labelledby="export-title" className="card-panel p-4 sm:p-6 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3 justify-between">
+          <div>
+            <h2 id="export-title" className="text-sm font-bold text-[var(--text-main)]">Maand exporteren</h2>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+              {exportData.ritten.length} {exportData.ritten.length === 1 ? 'rit' : 'ritten'} • {formatEuro(exportData.totaal_eur)}
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-end gap-2 w-full sm:w-auto">
+            <div className="w-full sm:w-44">
+              <label htmlFor="export-month" className="label-tiny">Maand</label>
+              <input
+                id="export-month"
+                type="month"
+                value={exportMonth}
+                onChange={(e) => e.target.value && setExportMonth(e.target.value)}
+                className="input-field py-2"
+              />
+            </div>
+            <button
+              type="button"
+              id="kopieer-maand-json"
+              onClick={copyMonthJson}
+              className="btn-primary flex items-center justify-center gap-2 py-2.5 whitespace-nowrap w-full sm:w-auto"
+            >
+              {copyStatus === 'ok' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              <span>{copyStatus === 'ok' ? 'Gekopieerd' : 'Kopieer maand als JSON'}</span>
+            </button>
+          </div>
+        </div>
+        {copyStatus === 'error' && (
+          <p role="status" className="text-xs text-amber-700 dark:text-amber-300">
+            Kopiëren naar het klembord lukte niet; de JSON hieronder is geselecteerd.
+          </p>
+        )}
+        <pre
+          id="ritten-json"
+          data-maand={exportMonth}
+          className="text-[11px] font-mono p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-[var(--panel-border)] text-[var(--text-main)] whitespace-pre-wrap break-all max-h-48 overflow-auto"
+        >{exportJson}</pre>
+      </section>
+
       {/* Travel Entries List */}
       <div className="card-panel overflow-hidden">
         <div className="p-4 border-b border-[var(--panel-border)]">
@@ -268,7 +337,7 @@ export const TravelTab: React.FC<TravelTabProps> = ({
 
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <div className="font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400">
+                      <div className="font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
                         {formatEuro(comp)}
                       </div>
                     </div>

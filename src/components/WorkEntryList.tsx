@@ -626,7 +626,7 @@ export const WorkEntryList: React.FC<WorkEntryListProps> = ({
                     <div>
                       <div className="font-semibold text-emerald-900 dark:text-emerald-200">{vp.description}</div>
                       <div className="text-[10px] text-emerald-700 dark:text-emerald-400">
-                        {vp.startDate} t/m {vp.endDate}
+                        {formatDateBE(vp.startDate)} t/m {formatDateBE(vp.endDate)}
                       </div>
                     </div>
                     <button
